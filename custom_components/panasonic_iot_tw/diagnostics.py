@@ -77,7 +77,10 @@ _OVERVIEW_STATE_WORDS = {
 # such as "0x05"; unlike arbitrary free text, this is safe to report.
 # Status is deliberately limited to small numeric, date/time, and known
 # status words; unknown text (including possible identifiers) stays masked.
-_OVERVIEW_SCALAR_FIELDS = {"AreaID", "SeqNo", "Time", "Status", "CommandType"}
+_OVERVIEW_SCALAR_FIELDS = {
+    "AreaID", "SeqNo", "Time", "Status", "CommandType",
+    "status", "RemainingTime", "EstimatedFinish",
+}
 _OVERVIEW_LIST_LIMIT = 128
 
 
@@ -131,6 +134,7 @@ def _safe_overview_shape(
             _OVERVIEW_NUMBER.fullmatch(value)
             or _OVERVIEW_TIME.fullmatch(value)
             or _OVERVIEW_DATE.fullmatch(value)
+            or (field == "Status" and _OVERVIEW_HEX_COMMAND.fullmatch(value))
             or value.lower() in _OVERVIEW_STATE_WORDS
         ):
             return value
