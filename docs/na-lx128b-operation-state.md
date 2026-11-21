@@ -248,6 +248,42 @@ the actual physical transition occurs exactly at 16:21. A subsequent
 sample after the App changes stage is needed to identify the transition,
 particularly any intermediate phase preceding anti-crease holding.
 
+## End of wash+dry: drying → anti-crease holding (2026-11-21 16:22)
+
+A second, independently observed wash+dry cycle confirms the candidate
+anti-crease holding code.
+
+- At **16:19:01 Asia/Taipei**, the most recent synchronized numeric overview
+  reported `0x50=2`, `0x54=6`; the official App still showed
+  **乾衣中**, with estimated completion **16:21**.
+- At **16:21**, the App remained **乾衣中**, but revised its estimate
+  to **16:22**. The user's diagnostics were still the previous sample,
+  so no new cloud state was established at that moment.
+- By **16:22**, the App showed drying complete and **鬆柔保持中**.
+  The new successful overview sample from **16:22:05** showed
+  **`0x50=2`, `0x54=11`**, both numeric from the same response.
+  `0x41`, `0x4F` and `0x20` remained empty; HA ETA stayed null.
+  DeviceGetInfo `0x01=1` and `0x50=2` did not change, and
+  remote-operation permission `0x74=0`.
+
+This confirms the **`0x54=6 → 11` transition alongside App drying →
+anti-crease** at the granularity of these samples. A previous independent
+cycle also showed `0x54=11` during 鬆柔保持中 at **13:24:25**.
+Therefore `0x54=11` has multiple supporting observations, but the
+manufacturer's official register semantics remain undocumented.
+
+The unchanged `0x50=2` is particularly important: it should mean a
+broad running/active state rather than be treated as proof of *ongoing*
+drying. The draft classifier already maps synchronized `0x54=11`
+to `soft_keeping`. **No new code change is required.** The user has
+not yet reported whether HA itself displayed 鬆柔保持中 at this
+particular transition; that end-to-end UI verification remains open.
+
+Note that the last earlier sample was 16:19:01; no intermediate stage
+was **observed**, which does not rule out a brief transient stage
+between samples. The App's 16:22 estimate matched its transition
+minute on this occasion.
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
@@ -276,8 +312,13 @@ reverse engineering:
   wash+dry; check if rinse/spin transitions use a different code.
 - [ ] Repeat `0x54=6` in a drying programme, and verify that a *wash-only*
   programme never uses it for an unrelated phase.
-- [ ] Repeat `0x54=11` in anti-crease holding, ideally with `0x01`
-  alongside it; determine whether this also appears in cooling or airflow.
+- [x] Repeat `0x54=11` in anti-crease holding with DeviceGetInfo `0x01=1` (16:22:05, second wash+dry cycle on 2026-11-21).
+- [ ] Determine whether short cooling/airflow phases exist between `0x54=6`
+  and `0x54=11`, or whether `0x54=11` also appears elsewhere. The three-minute
+  observation gap cannot rule out brief transitions.
+- [ ] Verify the **HA experimental sensor actually shows 鬆柔保持中**
+  when the App does; the API classification is confirmed, but this run's
+  HA display has not yet been reported.
 - [ ] Verify `0x01=2` after power-off from a running or standby state,
   not only after a pause; verify `0x01=3` on a second power-on.
 - [ ] Observe the meaning of DeviceGetInfo `0x50=3,4,5,8` for
