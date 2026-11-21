@@ -33,8 +33,13 @@ is preserved through short gaps, recalculated as time passes, and discarded
 after 15 minutes without a valid minute reading. When a fresh 0x50 is not 2,
 the ETA is cleared as a conservative first approximation.
 
-The account-level GET is attempted no more than once per 3 minutes, only while
-a Type 3 device is registered. Failures do not interrupt ordinary HA entities.
+The account-level GET normally runs no more than once every 3 minutes, only
+while a Type 3 device is registered. During an actively running Type 3 cycle
+(`DeviceGetInfo 0x50=2`) with **no fresh overview ETA**, the next normal HA
+coordinator poll may retry after a minimum of 1 minute. It does not issue
+back-to-back requests, create a separate background loop, or override the
+configured HA update interval. Once a fresh ETA is available, requests revert
+to the 3-minute cadence. Failures do not interrupt ordinary HA entities.
 
 ## Remaining investigation
 
