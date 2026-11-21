@@ -291,6 +291,17 @@
       "washing_machine_drying_expected_finish": {
         "name": "Drying Expected Finish"
       },
+      "washing_machine_laundry_operation_state": {
+        "name": "Washer-Dryer Operation State (Experimental)",
+        "state": {
+          "off": "Powered off",
+          "standby": "Standby",
+          "running": "Running",
+          "drying": "Drying",
+          "soft_keeping": "Anti-crease holding",
+          "paused": "Paused"
+        }
+      },
       "washing_machine_overview_41": {
         "name": "Cloud Raw Status 0x41"
       },
