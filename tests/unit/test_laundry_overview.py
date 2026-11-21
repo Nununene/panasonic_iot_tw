@@ -160,14 +160,59 @@ def test_stopped_appliance_clears_eta_even_if_minutes_old_values_remain():
     assert current_remaining_minutes(data["laundry"], now) is None
 
 
-def test_4f_fallback_when_41_missing():
+def test_4f_fallback_only_when_fresh_drying_phase_is_confirmed():
     data = attach_laundry_overview(
         _device_data(), None,
-        _payload({"0x41": "", "0x4F": "85", "0x50": "2"}),
+        _payload({
+            "0x41": "", "0x4F": "85", "0x50": "2", "0x54": "6",
+        }),
         START,
     )
     assert data["laundry"]["overview_eta_command"] == "0x4F"
     assert current_remaining_minutes(data["laundry"], START) == 85
+
+
+def test_spin_phase_4f_does_not_override_missing_full_cycle_41():
+    # Actual 2026-11-21 cycle: 15:02 spin had 0x41=116, 0x4F=11.
+    # If the 0x41 sample were blank, the old fallback would show a
+    # fabricated 15:13 programme finish instead of the App's ~16:57.
+    data = attach_laundry_overview(
+        _device_data(), None,
+        _payload({
+            "0x41": "", "0x4F": "11", "0x50": "2", "0x54": "5",
+        }),
+        START,
+    )
+    assert data["laundry"]["overview_eta_command"] is None
+    assert current_expected_finish(data["laundry"], START) is None
+
+
+def test_time_codes_disagree_in_spin_prefers_full_programme_41():
+    data = attach_laundry_overview(
+        _device_data(), None,
+        _payload({
+            "0x41": "116", "0x4F": "11", "0x50": "2",
+            "0x54": "5", "0x20": "66",
+        }),
+        START,
+    )
+    assert data["laundry"]["overview_eta_command"] == "0x41"
+    assert current_remaining_minutes(data["laundry"], START) == 116
+    assert current_expected_finish(data["laundry"], START) == (
+        START + timedelta(minutes=116)
+    )
+
+
+def test_4f_without_fresh_phase_code_cannot_supply_full_cycle_eta():
+    # Even if the cached stage used to be drying, the latest 0x54 might
+    # have been omitted or empty while the programme changed phases.
+    data = attach_laundry_overview(
+        _device_data(), None,
+        _payload({"0x41": "", "0x4F": "11", "0x50": "2"}),
+        START,
+    )
+    assert data["laundry"]["overview_eta_command"] is None
+    assert current_remaining_minutes(data["laundry"], START) is None
 
 
 def test_invalid_sentinels_and_negative_remaining_minutes_are_ignored():
