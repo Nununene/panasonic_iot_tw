@@ -15,6 +15,28 @@ The app ETA difference and both 0x41/0x4F values match **exactly** in two
 consecutive samples during drying. This is evidence, not vendor documentation;
 the roles of 0x41 vs 0x4F outside drying remain unknown.
 
+### 15:02:20 wash+dry spin sample: two time fields differ
+
+The user later exported a full Home Assistant history CSV (UTC timestamps).
+On 2026-11-21 at **15:02:20 Asia/Taipei**, during a wash+dry programme
+with `0x54=5` (spin), the API reported `0x41=116`,
+`0x4F=11`, `0x50=2`, `0x20=66`. The resulting HA
+finish time was **16:58:19 Asia/Taipei**, close to the official App's
+16:57 estimate checked at 14:59. HA next observed `0x54=6` (drying)
+at **15:14:36**, about 12 minutes later.
+
+This suggests, but does **not yet prove**, that **0x41 tracks
+whole-programme remaining time** and **0x4F may track current-phase
+remaining time**. The two were equal in the earlier drying samples
+because the active dryer phase may have lasted until programme completion.
+
+**Safe fallback change on the NA-LX128B operation-state draft branch:**
+when `0x41` is blank, allow `0x4F` to become a programme ETA only
+when the same new overview response contains `0x50=2` and
+`0x54=6` (confirmed drying). Otherwise leave ETA unknown rather than
+misinterpret the spin-phase 11 minutes as 11 minutes until wash+dry
+completion. The regular `0x41` path remains unchanged.
+
 The cloud often returns **all blank** `Status` values or **partly blank**
 responses. A real example had 0x41/0x4F/0x20 empty but 0x50=2 and 0x54=6.
 
@@ -66,8 +88,12 @@ timestamp, rather than claiming that its commands were absent.
 
 ## Remaining investigation
 
-- Validate what 0x41, 0x4F, 0x54 and 0x20 mean in non-drying phases; do not
-  assume they have identical semantics for all washer programs.
+- Validate the apparent difference between total-programme `0x41`
+  and possibly current-phase `0x4F` in wash/rinse/spin/drying; do not
+  assume identical meanings across all washer programmes.
+- Validate `0x54=3` and `0x54=4` against the official App in the
+  same session; the HA history CSV shows these phases before spin `5`,
+  but lacks contemporaneous App labels.
 - Verify long-term behaviour of intermittent blank statuses and stale data.
 - Verify end-of-cycle/idle and revised ETA behaviour on a real NA-LX128B.
 - The `debug/na-lx128b-overview-probe` branch separately retains the
