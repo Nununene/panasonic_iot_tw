@@ -232,6 +232,22 @@ Do not silently change the established entity ID/name or claim the exact
 semantics before further validation. Its displayed value should be
 understood as an experimental whole-programme estimate.
 
+## Drying remains in phase 6 near App-predicted finish (2026-11-21 16:19)
+
+At **16:19 Asia/Taipei**, the official App was still showing **乾衣中**
+with estimated finish **16:21**, unchanged from its adjusted estimate
+at 15:56. The same-minute successful account overview GET at **16:19:01**
+reported synchronized numeric `0x50=2` and `0x54=6`, with
+`0x41`, `0x4F` and `0x20` all `empty_string`. DeviceGetInfo
+reported `0x01=1`, `0x50=2`, and `0x74=0`; ETA remained null in HA.
+
+Thus `0x54=6` was repeatedly seen across approximately 55 minutes of
+drying, including ~2 minutes before the App's expected finish, even while
+the App changed its prediction from 16:57 to 16:21. This does not prove
+the actual physical transition occurs exactly at 16:21. A subsequent
+sample after the App changes stage is needed to identify the transition,
+particularly any intermediate phase preceding anti-crease holding.
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
