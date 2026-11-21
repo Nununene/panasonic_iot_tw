@@ -175,6 +175,63 @@ observed *yet*, but there may be shorter transitions between samples.
 The App was forecasting roughly **14 minutes** until finish; this
 cannot be inferred from `0x41/0x4F` in the received overview.
 
+## Home Assistant state-history CSV: sequence of a full wash+dry programme
+
+The user exported Home Assistant **history events**, which record entity
+**state changes**, not every coordinator poll. The timestamps were UTC
+(`Z`) and are converted to **Asia/Taipei (+08:00)** below. These times
+indicate when HA recorded the transition, not necessarily its exact physical
+onset. In this sample `0x50` stayed at `2` while **`0x54`** stepped
+through `3 → 4 → 5 → 6`:
+
+| HA history time, Taipei | Sensor / observed value | Interpretation |
+| --- | --- | --- |
+| 14:00:57 | overview `0x50=2`, `0x54=3` | Programme running; phase 3 **not yet identified in App** |
+| 14:28:34 | overview `0x54=4` | Next phase; **not yet identified in App** |
+| 14:50:02 | overview `0x54=5` | Supports spinning; App showed 脫水中 at 14:59 |
+| 15:02:20 | `0x41=116`, `0x4F=11`, `0x20=66` | **Different time scopes likely** (see below) |
+| 15:14:36 | overview `0x54=6`; experimental HA state `drying` | Supports drying; App confirmed at 15:24 |
+| 15:17:40 | raw `0x41/0x4F/0x20` and finish-time sensor became `unknown` | About 15 minutes after last numerical time sample; **cache expiry**, not proof that the machine reset |
+
+During initial running at **14:00:57**, the remote-permission binary sensor
+changed to off; this is an independent flag, not a phase code.
+
+### A strong new candidate interpretation of 0x41 versus 0x4F
+
+At **15:02:20**, while the programme was still in the spinning segment
+(`0x54=5` until 15:14:36), the API returned **`0x41=116` and
+`0x4F=11`**. The HA computed a finish at **16:58:19** from
+`0x41=116`, closely matching the official App's **16:57** forecast
+observed at 14:59.
+
+In contrast, 11 minutes after 15:02 is **about 15:13**, close to the
+next observed transition from spin (`0x54=5`) to drying
+(`0x54=6`) at **15:14:36**. This suggests:
+
+- `0x41`: **total programme remaining minutes**, even before drying;
+- `0x4F`: potentially **current phase remaining minutes**.
+
+These are **hypotheses**, not established vendor meanings. The previous
+drying-only observations saw both `0x41` and `0x4F` equal 111, then
+105, compatible with a phase that occupied the rest of the programme.
+Still needed: repeated paired readings in wash/rinse/spin/cooling and
+confirmation of both meaning and App ETA after programme adjustments.
+
+### Implication for the experimental HA ETA
+
+The initial ETA implementation treated `0x4F` as a general fallback
+whenever `0x41` was blank. That could incorrectly show *11 minutes to
+programme completion* if the overview returned `0x4F=11` alone during
+spinning. The draft now allows `0x4F` to provide an ETA **only when
+fresh overview `0x50=2` and `0x54=6` confirm drying together**;
+`0x41` remains the preferred overall-programme source.
+
+The existing entity named "drying remaining time" may actually represent
+**programme remaining time** from `0x41` in a combined wash+dry mode.
+Do not silently change the established entity ID/name or claim the exact
+semantics before further validation. Its displayed value should be
+understood as an experimental whole-programme estimate.
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
@@ -192,6 +249,13 @@ reverse engineering:
   during washing, not only after drying/anti-crease; confirm pause `7` and
   whether `0x01` changes.
 - [x] Observe `0x54=5` → `0x54=6` during the same wash+dry cycle as the official App changes from spinning (14:59) to drying (15:24) on 2026-11-21.
+- [ ] During a later normal wash+dry session, record official App phase
+  alongside fresh `0x54=3` and `0x54=4` to test possible wash and rinse
+  mappings; the CSV alone does not confirm their meanings.
+- [ ] Capture `0x41` and `0x4F` **at the same read** in multiple
+  different phases and compare to both App's total completion estimate
+  and subsequent phase transitions. Especially test whether `0x4F` is
+  the current phase countdown and whether `0x41` is total programme time.
 - [ ] Repeat `0x54=5` during spin in a wash-only programme as well as
   wash+dry; check if rinse/spin transitions use a different code.
 - [ ] Repeat `0x54=6` in a drying programme, and verify that a *wash-only*
