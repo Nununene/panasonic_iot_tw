@@ -27,6 +27,7 @@ from .laundry_overview import (
     OVERVIEW_MISSING_ETA_RETRY_INTERVAL,
     attach_laundry_overview,
     current_expected_finish,
+    summarize_overview_response,
 )
 from .services import SmartApp
 
@@ -144,11 +145,14 @@ class PanasonicCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 self._last_overview_attempt is None
                 or now - self._last_overview_attempt >= overview_interval
             )
+            overview_fetch_result = None
             if due:
                 self._last_overview_attempt = now
                 try:
                     overview_payload = await self.smart_app.get_laundry_overview()
+                    overview_fetch_result = "success"
                 except Exception as exc:
+                    overview_fetch_result = "error"
                     # Avoid logging exception text: cloud responses may include
                     # auth tokens or private gateway IDs.
                     _LOGGER.warning(
@@ -160,9 +164,33 @@ class PanasonicCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 self._last_overview_attempt.isoformat()
                 if self._last_overview_attempt else None
             )
-            for device in data.values():
-                if device.get("device_type") == 3:
-                    device["overview_last_request_at"] = last_request
+            for device_key, device in data.items():
+                if device.get("device_type") != 3:
+                    continue
+                before = (self.data or {}).get(device_key, {})
+                device["overview_last_request_at"] = last_request
+                device["overview_last_fetch_result"] = (
+                    overview_fetch_result
+                    if overview_fetch_result is not None
+                    else before.get("overview_last_fetch_result")
+                )
+                # Only a successful request replaces the diagnostic summary.
+                # A skipped poll or API error must not make the previous
+                # response appear to have reported missing command codes.
+                if overview_fetch_result == "success":
+                    device["overview_last_response_at"] = now.isoformat()
+                    device["overview_last_response_summary"] = (
+                        summarize_overview_response(
+                            overview_payload, device.get("gwid")
+                        )
+                    )
+                else:
+                    device["overview_last_response_at"] = before.get(
+                        "overview_last_response_at"
+                    )
+                    device["overview_last_response_summary"] = before.get(
+                        "overview_last_response_summary"
+                    )
 
         self._consecutive_failures = 0
         self._auth_failure_count = 0
