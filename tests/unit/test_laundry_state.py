@@ -41,6 +41,18 @@ def test_drying_inferred_only_from_synchronized_valid_stage_6():
     assert laundry_state_attributes(device, BASE)["overview_phase_current"] is True
 
 
+def test_spinning_phase_5_from_real_wash_and_dry_sample():
+    """14:56:11 overview matched official app spinning at 14:59."""
+    sample = _device(1, 2, 5)
+    sample["status"]["0x74"] = "0"
+    assert laundry_operation_state(sample, BASE) == "spinning"
+    assert laundry_state_attributes(sample, BASE)["overview_phase_current"] is True
+
+    # This should not claim spinning from an older cached 0x54=5
+    sample["overview_last_response_summary"]["commands"]["0x54"] = "empty_string"
+    assert laundry_operation_state(sample, BASE) == "running"
+
+
 def test_anti_crease_holding_phase_11():
     device = _device(1, 2, 11)
     assert laundry_operation_state(device, BASE) == "soft_keeping"
