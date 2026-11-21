@@ -154,3 +154,29 @@ def attach_laundry_overview(
             device["overview_eta_observed_at"] = None
             device["overview_eta_command"] = None
     return devices
+
+
+def current_expected_finish(
+    device: dict[str, Any], now: datetime
+) -> datetime | None:
+    """Return a time-zone-aware ETA only while its snapshot is recent."""
+    if device.get("overview_status", {}).get("0x50") != 2:
+        return None
+    observed = _read_iso_time(device.get("overview_eta_observed_at"))
+    eta = _read_iso_time(device.get("overview_expected_finish_at"))
+    if not _is_recent(observed, now) or eta is None:
+        return None
+    return eta
+
+
+def current_remaining_minutes(
+    device: dict[str, Any], now: datetime
+) -> int | None:
+    """Estimate minutes until completion without treating empty polls as zero."""
+    eta = current_expected_finish(device, now)
+    if eta is None:
+        return None
+    seconds = (eta - now).total_seconds()
+    # Round up whole minutes; a seconds-level timestamp shouldn't imply the
+    # appliance has finished a full minute early.
+    return max(0, int((seconds + 59.999999) // 60))
