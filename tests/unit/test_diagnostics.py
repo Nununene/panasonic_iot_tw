@@ -204,10 +204,10 @@ async def test_overview_register_codes_are_visible_but_identifiers_stay_hidden()
     assert len(sample) == len(info), "Diagnostic output must not stop at 5 codes"
     assert sample[5] == {"CommandType": "0x05", "Status": "-1683.3"}
     assert sample[6] == {"CommandType": "0x06", "Status": "6"}
-    assert sample[10] == {"CommandType": "0x0A", "Status": "<text>"}
+    assert sample[10] == {"CommandType": "0x0A", "Status": "<redacted-sensitive-status>"}
     assert sample[-1] == {
         "CommandType": "<unrecognized-command>",
-        "Status": "<text>",
+        "Status": "<redacted-sensitive-status>",
     }
     dumped = str(result)
     assert "PRIVATE_GATEWAY" not in dumped
@@ -215,3 +215,44 @@ async def test_overview_register_codes_are_visible_but_identifiers_stay_hidden()
     assert "SECRET_TOKEN" not in dumped
     assert "SECRET_PASSWORD" not in dumped
     assert "SECRET_COMMAND_ID" not in dumped
+
+
+
+async def test_overview_status_text_relaxed_without_private_data():
+    """Non-numeric appliance states remain visible; secrets still blocked."""
+    entry = _entry_with_coordinator()
+    coordinator = entry.runtime_data
+    coordinator.data["device_auth_1"]["device_type"] = 3
+    app = coordinator.smart_app
+    app._token_manager.ensure_authenticated = AsyncMock()
+    app._token_manager.get_auth_headers.return_value = {"cptoken": "secret"}
+    app._api_client.request = AsyncMock(return_value={
+        "GwList": [{
+            "GWID": "MY_PRIVATE_GWID",
+            "List": [
+                {"CommandType": "0x41", "Status": "drying in progress"},
+                {"CommandType": "0x50", "Status": "--"},
+                {"CommandType": "0x54", "Status": "-1683.3"},
+                {"CommandType": "0x20", "Status": "2026/11/21 12:11"},
+                {"CommandType": "0x4F", "Status": "user@example.com"},
+                {"CommandType": "0x05", "Status": "Bearer PRIVATE_TOKEN"},
+                {"CommandType": "0x0A", "Status": "0xA0 FF 00: 11"},
+            ],
+        }],
+    })
+
+    result = await async_get_config_entry_diagnostics(Mock(), entry)
+    statuses = {
+        item["CommandType"]: item["Status"]
+        for item in result["overview_probe"]["overview_shape"]["GwList"][0]["List"]
+    }
+    assert statuses["0x41"] == "drying in progress"
+    assert statuses["0x50"] == "--"
+    assert statuses["0x54"] == "-1683.3"
+    assert statuses["0x20"] == "2026/11/21 12:11"
+    assert statuses["0x4F"] == "<redacted-sensitive-status>"
+    assert statuses["0x05"] == "<redacted-sensitive-status>"
+    assert statuses["0x0A"] == "0xA0 FF 00: 11"
+    assert "user@example.com" not in str(result)
+    assert "PRIVATE_TOKEN" not in str(result)
+    assert "MY_PRIVATE_GWID" not in str(result)
