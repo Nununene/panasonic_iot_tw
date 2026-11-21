@@ -543,6 +543,47 @@ unconfirmed state as unknown only after gathering more evidence,
 instead of inventing `off` from one blank overview.
 
 
+### 21:01:11: per-device status finally becomes unavailable
+
+At **21:01:11.865 Asia/Taipei**, a new overview GET succeeded but
+again returned `empty_string` for all five commands. Cached
+`overview_status 0x50=2, 0x54=5` remained observed
+**20:52:00.237**, not refreshed. Crucially the processed
+DeviceGetInfo result now had **`status={}`, `available=false`**,
+and HA's experimental operation state became **unavailable**.
+
+Reading the current implementation clarifies this progression:
+
+- `DeviceService.get_device_status()` returns an empty dict both if
+  parsing a response yields no Info codes and if an exception occurs
+  (the error handler logs the exception separately).
+- `DataProcessor.process_device_status()` marks such an empty
+  per-device result **unavailable**.
+- `SmartApp._bridge_transient_device_failures()` retains the
+  last-known-good device state for at most **two consecutive**
+  unavailable polls (`TRANSIENT_FAILURE_TOLERANCE=2`).
+  Thus earlier `0x01=1, 0x50=2, available=true` could be
+  stale data bridged during failures rather than fresh readings.
+- `PanasonicEntity.available` requires both coordinator success and
+  per-device `available=true`; even an empty `laundry_operation_state`
+  result therefore correctly shows **unavailable**, not
+  an invented off/unknown enum.
+
+This **fits** the observed sequence after the real washer was
+switched off: initially stale generic `running`, then `unavailable`.
+It is **not yet proof** of why DeviceGetInfo failed; no
+response-status reason or fresh-read timestamp was included
+in diagnostics. Device-offline, timeout, and empty successful
+responses all remain possibilities, distinguishable by sanitized
+HA logs around 20:52–21:02.
+
+Do **not** turn `available=false` into an unconditional "off"
+state: loss of connectivity while a programme is actually running
+would create the same symptom. Further design could distinguish
+confirmed "powered off" from "temporarily unreachable" only after
+capturing reliable vendor state or freshness evidence. No runtime
+code changes from this observation.
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
@@ -596,10 +637,13 @@ reverse engineering:
   five latest `empty_string` commands with `0x50=2,0x54=5`
   retained only as 20:52:00 numeric cache. HA still displayed 運轉中,
   and processed DeviceGetInfo retained `0x01=1,0x50=2`.
-- [ ] Determine whether post-power-off DeviceGetInfo `0x01=1,0x50=2`
-  came from a fresh remote reply or integration fallback/cache; current
-  diagnostics contain no per-request proof of that. Track later
-  natural polls without forcing a washer restart.
+- [x] Verify `status={}`, `available=false` after real power-off
+  at 21:01:11, after stale generic `running` at 20:58. Existing
+  two-poll transient-failure bridge explains how old running values
+  could persist temporarily.
+- [ ] Inspect sanitized HA logs around 20:52–21:02 to distinguish a
+  deviceOffline exception, timeout, or successful empty DeviceGetInfo.
+  Neither diagnostics snapshot establishes which mechanism occurred.
 - [ ] Observe the brief **NANOE除霉等待中** App stage alongside a
   *fresh synchronized* cloud overview before assigning a stage code.
 - [ ] Verify `0x01=2` after power-off from a running or standby state,
