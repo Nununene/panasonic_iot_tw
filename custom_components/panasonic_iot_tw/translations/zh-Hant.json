@@ -298,6 +298,7 @@
           "standby": "待機中",
           "running": "運轉中",
           "washing": "洗衣中",
+          "rinsing": "洗清中",
           "spinning": "脫水中",
           "drying": "乾衣中",
           "soft_keeping": "鬆柔保持中",
