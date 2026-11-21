@@ -1,5 +1,6 @@
 """Unit tests for washer/dryer duration sensor gating."""
 import pytest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 from homeassistant.helpers.entity import EntityCategory
@@ -58,7 +59,6 @@ class TestDurationSensorGating:
         "device_cls,status,remaining_key,remaining_cmd",
         [
             (WashingMachineDevice, WASHER_STATUS, "washing_remaining_time", "0x13"),
-            (WashingMachineDevice, COMBO_WASHER_STATUS, "drying_remaining_time", "0x05"),
             (DryerDevice, DRYER_STATUS, "drying_remaining_time", "0x05"),
         ],
     )
@@ -71,7 +71,6 @@ class TestDurationSensorGating:
         "device_cls,status,remaining_key,remaining_cmd",
         [
             (WashingMachineDevice, WASHER_STATUS, "washing_remaining_time", "0x13"),
-            (WashingMachineDevice, COMBO_WASHER_STATUS, "drying_remaining_time", "0x05"),
             (DryerDevice, DRYER_STATUS, "drying_remaining_time", "0x05"),
         ],
     )
@@ -101,6 +100,30 @@ class TestDurationSensorGating:
         coordinator, sensors = _sensors(device_cls, status)
         _set_status(coordinator, **{"0x15": 3, "0x50": operation_status})
         assert sensors["schedule_remaining_time"].native_value == expected
+
+    def test_combo_dryer_remaining_time_uses_overview_instead_of_0x05(self):
+        """Type 3 combo reads validated overview ETA, not invalid 0x05."""
+        coordinator, sensors = _sensors(WashingMachineDevice, COMBO_WASHER_STATUS)
+        now = datetime.now(timezone.utc)
+        device = coordinator.data["dev1"]
+        device["status"] = {"0x05": "-1683.3", "0x50": 2}
+        device["overview_status"] = {
+            "0x41": 47, "0x4F": 47, "0x50": 2,
+            "0x54": 6, "0x20": 66,
+        }
+        device["overview_expected_finish_at"] = (
+            now + timedelta(minutes=47)
+        ).isoformat()
+        device["overview_eta_observed_at"] = now.isoformat()
+        device["overview_eta_command"] = "0x41"
+        assert sensors["drying_remaining_time"].native_value == 47
+        assert sensors["drying_expected_finish"].native_value == (
+            now + timedelta(minutes=47)
+        )
+        for code in ("41", "4f", "50", "54", "20"):
+            assert sensors[f"overview_{code}"].native_value == {
+                "41": 47, "4f": 47, "50": 2, "54": 6, "20": 66,
+            }[code]
 
     def test_combo_dryer_api_sentinel_returns_none(self):
         """An invalid Panasonic cloud sentinel must not be shown as minutes."""
