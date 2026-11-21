@@ -147,6 +147,10 @@ def laundry_operation_state(
         return "drying"
     if phase == 5:
         return "spinning"
+    if phase == 4:
+        # LX128B CommandList: 0x54=4 is 洗清; App independently showed
+        # 洗清中 in wash-only after phase 3 at 20:30 on 2026-11-21.
+        return "rinsing"
     if phase == 3:
         # LX128B CommandList: 0x54=3 is 洗衣; App independently showed
         # 洗衣中 in a wash-only programme at 20:24 on 2026-11-21.
