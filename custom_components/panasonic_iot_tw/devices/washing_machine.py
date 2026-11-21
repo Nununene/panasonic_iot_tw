@@ -24,6 +24,8 @@ class WashingMachineDevice(BaseDevice):
     # Device registers, ordered by command type. const.py's
     # DEVICE_STATUS_CODES decides which of them are polled.
     WASHING_REMAINING_TIME_COMMAND = "0x13"   # Washing remaining time (0-599 min)   Sensor
+    DRYING_REMAINING_TIME_COMMAND = "0x05"    # Drying remaining time on combo models
+    DRYING_ERROR_CODE_COMMAND = "0x0A"         # Dryer panel error code on combo models
     SCHEDULE_REMAINING_TIME_COMMAND = "0x15"  # Reservation remaining time (0-24 h)  Sensor
     ERROR_CODE_COMMAND = "0x19"               # Panel error code, 0 = no fault       Sensor
     ENGINEERING_INFO_COMMAND = "0x34"         # Stage bits 128/64/32/16              4x BinarySensor
@@ -227,6 +229,32 @@ class WashingMachineDevice(BaseDevice):
                 entity_category=EntityCategory.DIAGNOSTIC,
                 translation_key="washing_machine_error_code"
             ),
+            # Washer-dryer combo models expose dryer data through the same
+            # Type 3 device entry. Keep these keys distinct from the Type 6
+            # dryer entities so the existing washer entities remain unchanged.
+            self._create_sensor(
+                coordinator,
+                command_type=self.DRYING_REMAINING_TIME_COMMAND,
+                name="乾衣殘時間",
+                sensor_key="drying_remaining_time",
+                device_class=SensorDeviceClass.DURATION,
+                unit=UnitOfTime.MINUTES,
+                value_processor=value_processors.safe_int,
+                extra_state_processor=value_processors.create_time_formatter("minutes"),
+                gate_command=self.OPERATION_STATUS_COMMAND,
+                gate_allowed=self.REMAINING_TIME_STATUSES,
+                translation_key="washing_machine_drying_remaining_time"
+            ),
+            self._create_sensor(
+                coordinator,
+                command_type=self.DRYING_ERROR_CODE_COMMAND,
+                name="乾衣錯誤代碼",
+                sensor_key="drying_error_code",
+                value_processor=value_processors.process_error_code,
+                extra_state_processor=value_processors.process_error_code_attributes,
+                entity_category=EntityCategory.DIAGNOSTIC,
+                translation_key="washing_machine_drying_error_code"
+            ),
         ]
     
     def get_binary_sensor_entities(self, coordinator) -> List:
@@ -330,6 +358,49 @@ class WashingMachineDevice(BaseDevice):
                 value_processor=value_processors.process_remote_control,
                 entity_category=EntityCategory.DIAGNOSTIC,
                 translation_key="washing_machine_remote_control_allowed"
+            ),
+            # Dryer phases share engineering register 0x34 with washer phases.
+            self._create_binary_sensor(
+                coordinator,
+                command_type=self.ENGINEERING_INFO_COMMAND,
+                name="進行中 - 乾衣",
+                sensor_key="drying_status",
+                device_class=BinarySensorDeviceClass.RUNNING,
+                value_processor=value_processors.create_current_phase_matcher(
+                    WASHING_MACHINE_AVAILABLE_PHASES, "drying"
+                ),
+                gate_command=self.OPERATION_STATUS_COMMAND,
+                gate_allowed=(self.RUNNING_STATUS, self.FINISHED_STATUS),
+                translation_key="washing_machine_drying_status",
+                entity_registry_enabled_default=False
+            ),
+            self._create_binary_sensor(
+                coordinator,
+                command_type=self.ENGINEERING_INFO_COMMAND,
+                name="進行中 - 送風",
+                sensor_key="air_flow_status",
+                device_class=BinarySensorDeviceClass.RUNNING,
+                value_processor=value_processors.create_current_phase_matcher(
+                    WASHING_MACHINE_AVAILABLE_PHASES, "air_flow"
+                ),
+                gate_command=self.OPERATION_STATUS_COMMAND,
+                gate_allowed=(self.RUNNING_STATUS, self.FINISHED_STATUS),
+                translation_key="washing_machine_air_flow_status",
+                entity_registry_enabled_default=False
+            ),
+            self._create_binary_sensor(
+                coordinator,
+                command_type=self.ENGINEERING_INFO_COMMAND,
+                name="進行中 - 鬆柔冷卻",
+                sensor_key="soft_cooling_status",
+                device_class=BinarySensorDeviceClass.RUNNING,
+                value_processor=value_processors.create_current_phase_matcher(
+                    WASHING_MACHINE_AVAILABLE_PHASES, "soft_cooling"
+                ),
+                gate_command=self.OPERATION_STATUS_COMMAND,
+                gate_allowed=(self.RUNNING_STATUS, self.FINISHED_STATUS),
+                translation_key="washing_machine_soft_cooling_status",
+                entity_registry_enabled_default=False
             )
         ]
     
