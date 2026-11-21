@@ -49,9 +49,20 @@ def test_washing_phase_3_from_wash_only_app_and_cloud_metadata():
     assert laundry_operation_state(device, BASE) == "running"
 
 
-def test_rinse_phase_4_not_exposed_without_app_confirmation():
-    # Model metadata defines 0x54=4 as 洗清 but no App comparison yet.
-    assert laundry_operation_state(_device(1, 2, 4), BASE) == "running"
+def test_rinse_phase_4_from_wash_only_app_and_cloud_metadata():
+    # 2026-11-21 20:30:32 Taipei: wash-only official App said 洗清中,
+    # concurrent overview 0x50=2/0x54=4 were both new numeric readings.
+    # LX128B CommandList also labels phase 4 洗清.
+    device = _device(1, 2, 4)
+    device["status"].update({"0x55": "0", "0x72": "8192", "0x73": "1"})
+    assert laundry_operation_state(device, BASE) == "rinsing"
+    assert laundry_state_attributes(device, BASE)["overview_phase_current"] is True
+
+    # A cached 0x54=4 must not be treated as the current rinse stage.
+    next_poll = BASE + timedelta(minutes=3)
+    device["overview_last_response_at"] = next_poll.isoformat()
+    device["overview_last_response_summary"]["commands"]["0x54"] = "empty_string"
+    assert laundry_operation_state(device, next_poll) == "running"
 
 
 def test_drying_inferred_only_from_synchronized_valid_stage_6():
