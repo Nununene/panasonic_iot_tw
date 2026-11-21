@@ -123,6 +123,21 @@ class TestWashingMachineDevice:
         mock_coordinator.data[0]["overview_observed_at"] = {"0x50": now}
         assert state.native_value == "paused"
 
+        # A same-read 0x54=3 in an active NA-LX128B wash-only
+        # programme should be exposed as the localized washing enum.
+        mock_coordinator.data[0]["status"]["0x01"] = "1"
+        mock_coordinator.data[0]["status"]["0x50"] = "2"
+        mock_coordinator.data[0]["overview_last_response_summary"] = {
+            "result": "matched",
+            "commands": {"0x50": "numeric", "0x54": "numeric"},
+        }
+        mock_coordinator.data[0]["overview_status"] = {"0x50": 2, "0x54": 3}
+        mock_coordinator.data[0]["overview_observed_at"] = {
+            "0x50": now, "0x54": now
+        }
+        assert "washing" in state.options
+        assert state.native_value == "washing"
+
 
     def test_get_sensor_entities_types(self, washing_machine_device, mock_coordinator):
         """Test that sensor entities have correct types and properties."""
