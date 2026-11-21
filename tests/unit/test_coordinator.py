@@ -270,3 +270,75 @@ async def test_overview_api_failure_does_not_break_other_devices(hass):
     assert data["washer"]["available"] is True
     assert data["washer"]["overview_status"] == {}
     assert data["washer"]["overview_expected_finish_at"] is None
+
+
+
+async def test_missing_active_laundry_eta_retries_at_bounded_interval(
+    hass, monkeypatch
+):
+    """Partial blank first response should not stay unknown for 3 full minutes."""
+    from datetime import timezone
+
+    entry = _make_entry(hass, options={CONF_UPDATE_INTERVAL: 60})
+    smart_app = AsyncMock()
+    smart_app.get_device_with_info.return_value = {
+        "washer": {
+            "device_type": 3,
+            "gwid": "gw-1",
+            "status": {"0x50": "2"},
+            "available": True,
+        }
+    }
+
+    import custom_components.panasonic_iot_tw.coordinator as coord_mod
+
+    beginning = datetime(2026, 11, 21, 4, 52, tzinfo=timezone.utc)
+
+    class FakeDatetime(datetime):
+        now_value = beginning
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.now_value
+
+    monkeypatch.setattr(coord_mod, "datetime", FakeDatetime)
+    smart_app.get_laundry_overview.side_effect = [
+        {"GwList": [{"GWID": "gw-1", "List": [
+            {"CommandType": "0x41", "Status": ""},
+            {"CommandType": "0x4F", "Status": ""},
+            {"CommandType": "0x50", "Status": "2"},
+            {"CommandType": "0x54", "Status": "6"},
+            {"CommandType": "0x20", "Status": ""},
+        ]}]},
+        {"GwList": [{"GWID": "gw-1", "List": [
+            {"CommandType": "0x41", "Status": "105"},
+            {"CommandType": "0x4F", "Status": "105"},
+            {"CommandType": "0x50", "Status": "2"},
+        ]}]},
+        {"GwList": [{"GWID": "gw-1", "List": [
+            {"CommandType": "0x50", "Status": "2"},
+        ]}]},
+    ]
+    coordinator = PanasonicCoordinator(hass, entry, smart_app)
+    coordinator.data = await coordinator._async_update_data()
+    assert coordinator.data["washer"]["overview_expected_finish_at"] is None
+    assert smart_app.get_laundry_overview.await_count == 1
+
+    FakeDatetime.now_value = beginning + timedelta(seconds=30)
+    coordinator.data = await coordinator._async_update_data()
+    assert smart_app.get_laundry_overview.await_count == 1
+
+    FakeDatetime.now_value = beginning + timedelta(minutes=1)
+    coordinator.data = await coordinator._async_update_data()
+    assert smart_app.get_laundry_overview.await_count == 2
+    assert coordinator.data["washer"]["overview_eta_command"] == "0x41"
+    assert coordinator.data["washer"]["overview_status"]["0x54"] == 6
+
+    # A fresh ETA restores the gentler normal 3-minute cadence.
+    FakeDatetime.now_value = beginning + timedelta(minutes=2)
+    coordinator.data = await coordinator._async_update_data()
+    assert smart_app.get_laundry_overview.await_count == 2
+
+    FakeDatetime.now_value = beginning + timedelta(minutes=4)
+    coordinator.data = await coordinator._async_update_data()
+    assert smart_app.get_laundry_overview.await_count == 3
