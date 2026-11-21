@@ -229,6 +229,10 @@ async def test_laundry_overview_preserves_partial_status_and_throttles(hass, mon
     coordinator = PanasonicCoordinator(hass, entry, smart_app)
     coordinator.data = await coordinator._async_update_data()
     assert coordinator.data["washer-1"]["overview_status"]["0x41"] == 111
+    assert coordinator.data["washer-1"]["overview_last_fetch_result"] == "success"
+    assert coordinator.data["washer-1"]["overview_last_response_summary"][
+        "commands"
+    ]["0x41"] == "numeric"
     assert "overview_status" not in coordinator.data["ac-1"]
 
     # One additional normal coordinator update before 3 minutes must NOT
@@ -236,6 +240,9 @@ async def test_laundry_overview_preserves_partial_status_and_throttles(hass, mon
     FakeDateTime.now_value = first + timedelta(minutes=1)
     coordinator.data = await coordinator._async_update_data()
     assert smart_app.get_laundry_overview.await_count == 1
+    assert coordinator.data["washer-1"]["overview_last_response_summary"][
+        "commands"
+    ]["0x41"] == "numeric"
 
     FakeDateTime.now_value = first + timedelta(minutes=3)
     coordinator.data = await coordinator._async_update_data()
@@ -248,6 +255,16 @@ async def test_laundry_overview_preserves_partial_status_and_throttles(hass, mon
         first + timedelta(minutes=3)
     ).isoformat()
     assert smart_app.get_laundry_overview.await_count == 2
+    assert current["overview_last_response_summary"]["commands"] == {
+        "0x41": "empty_string",
+        "0x4F": "empty_string",
+        "0x50": "numeric",
+        "0x54": "numeric",
+        "0x20": "empty_string",
+    }
+    assert current["overview_last_response_at"] == (
+        first + timedelta(minutes=3)
+    ).isoformat()
 
 
 async def test_overview_api_failure_does_not_break_other_devices(hass):
@@ -270,6 +287,8 @@ async def test_overview_api_failure_does_not_break_other_devices(hass):
     assert data["washer"]["available"] is True
     assert data["washer"]["overview_status"] == {}
     assert data["washer"]["overview_expected_finish_at"] is None
+    assert data["washer"]["overview_last_fetch_result"] == "error"
+    assert data["washer"]["overview_last_response_summary"] is None
 
 
 
