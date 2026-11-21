@@ -24,7 +24,9 @@ from .exceptions import (
 )
 from .laundry_overview import (
     OVERVIEW_POLL_INTERVAL,
+    OVERVIEW_MISSING_ETA_RETRY_INTERVAL,
     attach_laundry_overview,
+    current_expected_finish,
 )
 from .services import SmartApp
 
@@ -121,9 +123,26 @@ class PanasonicCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
         now = datetime.now(timezone.utc)
         if any(device.get("device_type") == 3 for device in data.values()):
             overview_payload = None
+            # First reading after HA restart often has only 0x50 and 0x54.
+            # Temporarily try the next *normal coordinator cycle* once at
+            # least 1 minute has passed, but use the normal 3-minute cadence
+            # whenever there is already a fresh ETA. No sleep or retry loop.
+            running_without_eta = any(
+                device.get("device_type") == 3
+                and str(device.get("status", {}).get("0x50")) == "2"
+                and current_expected_finish(
+                    (self.data or {}).get(device_key, {}), now
+                ) is None
+                for device_key, device in data.items()
+            )
+            overview_interval = (
+                OVERVIEW_MISSING_ETA_RETRY_INTERVAL
+                if running_without_eta
+                else OVERVIEW_POLL_INTERVAL
+            )
             due = (
                 self._last_overview_attempt is None
-                or now - self._last_overview_attempt >= OVERVIEW_POLL_INTERVAL
+                or now - self._last_overview_attempt >= overview_interval
             )
             if due:
                 self._last_overview_attempt = now
