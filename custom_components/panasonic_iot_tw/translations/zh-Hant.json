@@ -291,6 +291,17 @@
       "washing_machine_drying_expected_finish": {
         "name": "乾衣預計完成時間"
       },
+      "washing_machine_laundry_operation_state": {
+        "name": "洗衣機運轉狀態（實驗性）",
+        "state": {
+          "off": "關機",
+          "standby": "待機中",
+          "running": "運轉中",
+          "drying": "乾衣中",
+          "soft_keeping": "鬆柔保持中",
+          "paused": "一時停止中"
+        }
+      },
       "washing_machine_overview_41": {
         "name": "雲端原始狀態 0x41"
       },
