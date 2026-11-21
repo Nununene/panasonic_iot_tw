@@ -409,6 +409,30 @@ Its transition appeared in the previous wash+dry HA CSV, but a
 contemporaneous official App comparison in this wash-only cycle is
 still needed before adding the new translated HA `rinsing` enum.
 
+## Wash-only transition to rinsing: App confirms 0x54=4 (2026-11-21)
+
+During the **same wash-only programme** described above, the official
+Panasonic App switched to **洗清中**. At **20:30:32 Asia/Taipei**,
+the successful overview GET returned synchronized numeric values
+`0x50=2` and **`0x54=4`**, observed at the exact same time.
+DeviceGetInfo reported `0x01=1`, `0x50=2`, `0x55=0`,
+`0x72=8192`, `0x73=1`, and `0x74=0`; `0x41`,
+`0x4F`, and `0x20` were `empty_string`. The previous
+same-programme sample at **20:24:24** had `0x54=3` while the
+App said **洗衣中**.
+
+This is a *live wash-only* transition from `0x54=3` (洗衣)
+to `0x54=4` (洗清), confirming the LX128B cloud CommandList
+mapping and the App's wording. The classifier now supports
+`rinsing` / **洗清中** for a fresh synchronized `0x54=4`
+and adds the HA enum option and zh-Hant/en translations. Stale or
+blank 0x54 continues to fall back to generic `running`.
+
+**Deployed HA end-to-end check is still pending**: the washer is running
+the household's actual cycle and the user was advised not to restart HA
+until it finishes. Do not infer the physical transition's precise
+start time from these snapshots.
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
@@ -436,9 +460,9 @@ reverse engineering:
 - [x] Observe `0x54=5` → `0x54=6` during the same wash+dry cycle as the official App changes from spinning (14:59) to drying (15:24) on 2026-11-21.
 - [x] Confirm `0x54=3` (洗衣) against the official App in a wash-only
   programme at 20:24:24 on 2026-11-21; newer HA enum support added, UI test pending.
-- [ ] Compare official App wording with `0x54=4` (metadata: 洗清)
-  during a normal wash-only or wash+dry programme before adding a translated
-  HA `rinsing` enum.
+- [x] Confirm `0x54=4` (洗清) against the official App in a
+  wash-only programme at 20:30:32 on 2026-11-21; newer HA enum support
+  added, deployed UI test pending.
 - [ ] Check `0x41` (metadata: 洗衣殘時間) against App completion
   time across future cycles. Investigate `0x4F` (metadata: nanoe殘時間)
   separately, without treating it as current-stage or total ETA.
