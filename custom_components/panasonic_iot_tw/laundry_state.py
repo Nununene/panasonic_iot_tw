@@ -38,6 +38,35 @@ def _timestamp(value: Any) -> datetime | None:
     return parsed if parsed.tzinfo is not None else None
 
 
+def _latest_overview_operation(device: dict[str, Any], now: datetime) -> tuple[str | None, int | None]:
+    """Return the latest *fresh response* classification and verified 0x50.
+
+    Cached overview_status 0x50 can still say 7 after powering off. Treat
+    it as the present pause only when its observation timestamp is exactly
+    the latest matched cloud response's timestamp. A blank is different
+    from an old cached number; an error/absent response is not 'off'.
+    """
+    summary = device.get("overview_last_response_summary") or {}
+    if summary.get("result") != "matched":
+        return (None, None)
+    response_time = _timestamp(device.get("overview_last_response_at"))
+    if (
+        response_time is None
+        or not timedelta(0) <= now - response_time <= PHASE_FRESHNESS
+    ):
+        return (None, None)
+    kind = (summary.get("commands") or {}).get("0x50")
+    if kind != "numeric":
+        return (kind, None)
+    observed = _timestamp(
+        (device.get("overview_observed_at") or {}).get("0x50")
+    )
+    if observed != response_time:
+        return (None, None)
+    value = _code_int((device.get("overview_status") or {}).get("0x50"))
+    return ("numeric", value) if value is not None else (None, None)
+
+
 def _confirmed_phase(device: dict[str, Any], now: datetime) -> int | None:
     """Use 0x54 only when it and overview 0x50 are from this same live read."""
     # Even a matching overview pair must never be treated as the current phase
@@ -77,7 +106,10 @@ def laundry_operation_state(
 ) -> str | None:
     """Return a cautious, model-specific HA enum key or None (unknown).
 
-    DeviceGetInfo 0x01=2 takes priority over a lingering 0x50=7 on power-off.
+    0x01=2 is observed in BOTH pause and powered-off states. When DeviceGetInfo
+    0x50=7 too, a *fresh* numeric overview 0x50=7 means pause; an empty
+    latest overview 0x50 is a tentative powered-off signal. Unknown/old
+    cloud data must not be mistaken for a confirmed powered-off state.
     For running programmes, extra 0x54 stages are shown only with synchronized
     numeric overview readings; otherwise fall back to generic 'running'.
     """
@@ -87,8 +119,20 @@ def laundry_operation_state(
     status = device.get("status") or {}
     power = _code_int(status.get("0x01"))
     operation = _code_int(status.get("0x50"))
+    if power == 2 and operation == 7:
+        # Real pause sample: 0x01=2 AND DeviceGetInfo 0x50=7, while the
+        # latest UserGetDeviceStatus GET returns a new numeric 0x50=7.
+        # After power-off both DeviceGetInfo values persist but a new GET
+        # returned an empty overview 0x50, leaving cached 7 behind.
+        overview_kind, overview_value = _latest_overview_operation(device, now)
+        if overview_kind == "numeric" and overview_value == 7:
+            return "paused"
+        if overview_kind == "empty_string":
+            return "off"
+        return None
     if power == 2:
-        return "off"
+        # Unobserved combination: avoid treating 0x01=2 alone as off.
+        return None
     if operation == 1:
         return "standby"
     if operation == 7:
@@ -122,5 +166,8 @@ def laundry_state_attributes(
         "overview_0x50_observed_at": observed.get("0x50"),
         "overview_0x54_observed_at": observed.get("0x54"),
         "overview_last_response_at": device.get("overview_last_response_at"),
+        "overview_0x50_live_classification": _latest_overview_operation(
+            device, now
+        )[0],
         "overview_phase_current": _confirmed_phase(device, now) is not None,
     }
