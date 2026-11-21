@@ -41,6 +41,29 @@ back-to-back requests, create a separate background loop, or override the
 configured HA update interval. Once a fresh ETA is available, requests revert
 to the 3-minute cadence. Failures do not interrupt ordinary HA entities.
 
+## Troubleshooting missing ETA without extra cloud requests
+
+The HA diagnostics download includes a sanitized
+`overview_last_response_summary` for each Type 3 device. It is produced
+during the **normal coordinator's overview fetch**, not by downloading
+diagnostics itself. No private GWID or raw cloud response is retained.
+
+- `overview_last_fetch_result`: `success` or `error` for the most recent
+  attempted GET.
+- `overview_last_response_at`: timestamp of the most recent successful GET.
+- `overview_last_response_summary.result`: `matched`,
+  `gateway_not_returned`, `invalid_command_list`, etc.
+- `overview_last_response_summary.commands`: separate classifications for
+  each of `0x41`, `0x4F`, `0x50`, `0x54`, `0x20`:
+  `numeric`, `empty_string`, `not_returned`,
+  `status_field_missing`, `invalid_value`.
+
+Values in `overview_status` may be **cached from a previous valid response**;
+the summary only classifies the **latest successfully fetched payload**.
+Consult `overview_observed_at` to tell cached values apart from fresh values.
+A failed or skipped request preserves the previous response summary and
+timestamp, rather than claiming that its commands were absent.
+
 ## Remaining investigation
 
 - Validate what 0x41, 0x4F, 0x54 and 0x20 mean in non-drying phases; do not
