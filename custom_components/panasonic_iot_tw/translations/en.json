@@ -249,7 +249,10 @@
           "washing": "Washing",
           "rinsing": "Rinsing",
           "spinning": "Spinning",
-          "finished": "Finished"
+          "finished": "Finished",
+          "drying": "Drying",
+          "air_flow": "Air flow",
+          "soft_cooling": "Soft cooling"
         }
       },
       "dryer_current_stage": {
@@ -278,6 +281,12 @@
           "normal": "Normal",
           "more": "More"
         }
+      },
+      "washing_machine_drying_remaining_time": {
+        "name": "Drying Remaining Time"
+      },
+      "washing_machine_drying_error_code": {
+        "name": "Dryer Error Code"
       }
     },
     "binary_sensor": {
@@ -348,6 +357,15 @@
           "on": "Low",
           "off": "No warning"
         }
+      },
+      "washing_machine_drying_status": {
+        "name": "Running - Drying"
+      },
+      "washing_machine_air_flow_status": {
+        "name": "Running - Air flow"
+      },
+      "washing_machine_soft_cooling_status": {
+        "name": "Running - Soft cooling"
       }
     },
     "switch": {
