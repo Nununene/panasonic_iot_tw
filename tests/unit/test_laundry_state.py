@@ -35,6 +35,25 @@ def _device(power, operation, stage=None, *, moment=BASE, model="NA-LX128B"):
     return device
 
 
+def test_washing_phase_3_from_wash_only_app_and_cloud_metadata():
+    # At 20:24:24 Taipei on 2026-11-21, the App showed 洗衣中 in
+    # wash-only; same successful overview returned 0x50=2 and 0x54=3.
+    # The model's CommandList also declares 0x54=3 as 洗衣.
+    device = _device(1, 2, 3)
+    device["status"].update({"0x55": "0", "0x72": "8192", "0x73": "1"})
+    assert laundry_operation_state(device, BASE) == "washing"
+    assert laundry_state_attributes(device, BASE)["overview_phase_current"] is True
+
+    # Blank current 0x54 must not resurrect a cached washing label.
+    device["overview_last_response_summary"]["commands"]["0x54"] = "empty_string"
+    assert laundry_operation_state(device, BASE) == "running"
+
+
+def test_rinse_phase_4_not_exposed_without_app_confirmation():
+    # Model metadata defines 0x54=4 as 洗清 but no App comparison yet.
+    assert laundry_operation_state(_device(1, 2, 4), BASE) == "running"
+
+
 def test_drying_inferred_only_from_synchronized_valid_stage_6():
     device = _device(1, 2, 6)
     assert laundry_operation_state(device, BASE) == "drying"
