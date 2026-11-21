@@ -60,6 +60,59 @@ def decode_overview(response: Any) -> dict[str, dict[str, int]]:
     return result
 
 
+def summarize_overview_response(payload: Any, gwid: str | None) -> dict[str, Any]:
+    """Report response *shape*, never raw cloud fields or gateway identifiers.
+
+    The value cache intentionally omits blank fields. This separate safe
+    summary distinguishes a blank Status from a missing CommandType, a missing
+    gateway, malformed payloads, and valid readings without leaking secrets.
+    """
+    states = {command: "not_returned" for command in OVERVIEW_CODES}
+    if not isinstance(payload, dict):
+        return {"result": "invalid_response", "commands": states}
+    gateways = payload.get("GwList")
+    if not isinstance(gateways, list):
+        return {"result": "invalid_gateway_list", "commands": states}
+
+    matches = [
+        gateway for gateway in gateways
+        if isinstance(gateway, dict)
+        and isinstance(gwid, str) and gwid
+        and gateway.get("GWID") == gwid
+    ]
+    if not matches:
+        return {"result": "gateway_not_returned", "commands": states}
+
+    has_valid_list = False
+    for gateway in matches:
+        items = gateway.get("List")
+        if not isinstance(items, list):
+            continue
+        has_valid_list = True
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            command = item.get("CommandType")
+            if not isinstance(command, str) or command not in states:
+                continue
+            if "Status" not in item:
+                state = "status_field_missing"
+            elif item["Status"] == "":
+                state = "empty_string"
+            elif _parse_integer(item["Status"]) is not None:
+                state = "numeric"
+            else:
+                state = "invalid_value"
+            # If a gateway repeats a command, the latest valid sample wins.
+            if states[command] != "numeric" or state == "numeric":
+                states[command] = state
+
+    return {
+        "result": "matched" if has_valid_list else "invalid_command_list",
+        "commands": states,
+    }
+
+
 def _read_iso_time(raw: Any) -> datetime | None:
     if not isinstance(raw, str):
         return None
