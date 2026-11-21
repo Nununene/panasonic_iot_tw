@@ -92,7 +92,7 @@ class WashingMachineDevice(BaseDevice):
     
     def get_sensor_entities(self, coordinator) -> List:
         """Return sensor entities for washing machine."""
-        return [
+        sensors = [
             # Time sensors with formatting
             self._create_sensor(
                 coordinator,
@@ -314,7 +314,25 @@ class WashingMachineDevice(BaseDevice):
                 translation_key="washing_machine_overview_20",
             ),
         ]
-    
+        # Only the NA-LX128B has been observed in all three phases; do not
+        # apply these tentative 0x01/0x50/0x54 interpretations to other models.
+        if str(self.model).upper() == "NA-LX128B":
+            sensors.append(self._create_sensor(
+                coordinator,
+                command_type="0x50",
+                name="洗衣機運轉狀態（實驗性）",
+                sensor_key="laundry_operation_state",
+                data_source="laundry_operation_state",
+                device_class=SensorDeviceClass.ENUM,
+                options=[
+                    "off", "standby", "running", "drying",
+                    "soft_keeping", "paused",
+                ],
+                icon="mdi:washing-machine",
+                translation_key="washing_machine_laundry_operation_state",
+            ))
+        return sensors
+
     def get_binary_sensor_entities(self, coordinator) -> List:
         """Return binary sensor entities for washing machine."""
         return [
