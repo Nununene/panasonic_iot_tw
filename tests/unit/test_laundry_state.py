@@ -63,10 +63,86 @@ def test_paused_register_7_precedes_stale_or_strange_stage_49601():
     assert laundry_operation_state(device, BASE) == "paused"
 
 
-def test_power_off_register_01_2_overrides_stale_paused_operation():
-    # Power-off read: DeviceGetInfo 0x01=2, 0x50=7 (still prior pause).
-    device = _device(2, 7, 49601)
+def test_real_paused_sample_01_2_with_new_numeric_overview_50_7():
+    # 2026-11-21 16:28:13: App says 一時停止中, HA incorrectly said off.
+    # DeviceGetInfo 0x01=2, 0x50=7. Overview 0x50=7 is fresh, but
+    # 0x54=11 is cached from 16:25:09 and missing in latest response.
+    device = _device(2, 7)
+    device["overview_status"] = {"0x50": 7, "0x54": 11}
+    device["overview_observed_at"] = {
+        "0x50": BASE.isoformat(),
+        "0x54": (BASE - timedelta(minutes=3)).isoformat(),
+    }
+    device["overview_last_response_at"] = BASE.isoformat()
+    device["overview_last_response_summary"] = {
+        "result": "matched",
+        "commands": {
+            "0x41": "empty_string", "0x4F": "empty_string",
+            "0x50": "numeric", "0x54": "empty_string",
+            "0x20": "empty_string",
+        },
+    }
+    assert laundry_operation_state(device, BASE) == "paused"
+    attrs = laundry_state_attributes(device, BASE)
+    assert attrs["overview_0x50_live_classification"] == "numeric"
+    assert attrs["overview_phase_current"] is False
+
+
+def test_power_off_stale_7_with_latest_blank_cloud_50():
+    # 13:36:40 after power-off: DeviceGetInfo 0x01=2, 0x50=7,
+    # but latest overview returns all empty. Cached 7 is NOT fresh.
+    device = _device(2, 7)
+    device["overview_status"] = {"0x50": 7, "0x54": 49601}
+    device["overview_observed_at"] = {
+        "0x50": (BASE - timedelta(minutes=3)).isoformat(),
+        "0x54": (BASE - timedelta(minutes=3)).isoformat(),
+    }
+    device["overview_last_response_at"] = BASE.isoformat()
+    device["overview_last_response_summary"] = {
+        "result": "matched",
+        "commands": {
+            "0x50": "empty_string", "0x54": "empty_string",
+        },
+    }
     assert laundry_operation_state(device, BASE) == "off"
+    assert laundry_state_attributes(
+        device, BASE
+    )["overview_0x50_live_classification"] == "empty_string"
+
+
+def test_ambiguous_power_2_without_live_overview_does_not_claim_off():
+    device = _device(2, 7)
+    assert laundry_operation_state(device, BASE) is None
+    # Successful summary alone does not suffice if its timestamp is missing.
+    device["overview_last_response_summary"] = {
+        "result": "matched", "commands": {"0x50": "numeric"},
+    }
+    device["overview_status"] = {"0x50": 7}
+    assert laundry_operation_state(device, BASE) is None
+
+
+def test_cached_numeric_7_from_older_poll_is_not_live_pause():
+    device = _device(2, 7)
+    device["overview_status"] = {"0x50": 7}
+    device["overview_observed_at"] = {
+        "0x50": (BASE - timedelta(minutes=3)).isoformat()
+    }
+    device["overview_last_response_at"] = BASE.isoformat()
+    device["overview_last_response_summary"] = {
+        "result": "matched", "commands": {"0x50": "numeric"},
+    }
+    assert laundry_operation_state(device, BASE) is None
+
+
+def test_old_successful_overview_cannot_claim_pause_or_off():
+    device = _device(2, 7)
+    device["overview_status"] = {"0x50": 7}
+    device["overview_observed_at"] = {"0x50": BASE.isoformat()}
+    device["overview_last_response_at"] = BASE.isoformat()
+    device["overview_last_response_summary"] = {
+        "result": "matched", "commands": {"0x50": "numeric"},
+    }
+    assert laundry_operation_state(device, BASE + timedelta(minutes=6)) is None
 
 
 def test_standby_after_power_on_ignores_cached_paused_stage():
@@ -128,13 +204,14 @@ def test_fresh_phase_requires_numeric_overview_50():
     assert laundry_operation_state(device, BASE) == "running"
 
 
-def test_power_off_from_observed_sample_even_when_cloud_all_blank():
-    device = _device(2, 7)
+def test_power_2_without_paused_operation_is_not_automatically_off():
+    device = _device(2, 5)
+    device["overview_last_response_at"] = BASE.isoformat()
     device["overview_last_response_summary"] = {
         "result": "matched",
         "commands": {"0x50": "empty_string", "0x54": "empty_string"},
     }
-    assert laundry_operation_state(device, BASE) == "off"
+    assert laundry_operation_state(device, BASE) is None
 
 
 def test_state_attributes_include_raw_age_with_no_private_gateway_id():
