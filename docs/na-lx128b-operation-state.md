@@ -21,7 +21,7 @@ All times below are local Asia/Taipei times on **2026-11-21**.
 | Spin during wash+dry / 脫水中 | `1` | `2` | `2` | `5` | 14:56:11 numeric same-poll overview, user checked App at 14:59 showing 脫水中 and estimated 16:57 finish; `0x41/0x4F` were empty strings; remote permission `0x74=0` |
 | Drying after spin in same wash+dry cycle / 乾衣中 | `1` | `2` | `2` | `6` | 15:23:47 overview, App at 15:24 said 乾衣中 with finish estimate 16:57 (unchanged since spinning at 14:59); same-poll `0x50` and `0x54` numeric; `0x41/0x4F` empty |
 | Anti-crease holding / 鬆柔保持中 | not recorded | not recorded | `2` | `11` | 13:24:25 after drying completed |
-| Paused / 一時停止中 | not recorded | `7` in next status | `7` | `49601` | 13:30:33, after user pressed pause to take laundry out; `0x41/0x4F` were `0` |
+| Paused / 一時停止中 | `2` confirmed on later sample | `7` | `7` **fresh** | `49601` in first pause sample only | At 13:30:33, 0x41/0x4F were 0; at **16:28:13** after pause from anti-crease, App read 一時停止中, DeviceGetInfo 0x01=2, 0x50=7 and latest overview 0x50=7 numeric, but 0x54=11 was cached from 16:25:09 |
 | Powered off (app showed offline) | `2` | `7` (unchanged after pause) | previous `7` **cached** | previous `49601` **cached** | 13:36:40 new overview GET returned *all empty strings* |
 | On, standby / 待機中 | `3` | `1` | `1` **fresh** | previous `49601` **cached** | 13:39:45; overview `0x54` was empty again |
 | On, standby with remote control permission | `3` | `1` | `1` **fresh** | no valid value | 13:48:57; DeviceGetInfo `0x74` changed from `0` in ordinary standby to `1` after closing the door and enabling remote control; official App recognized permission |
@@ -33,8 +33,11 @@ trusting its presence as a fresh reading.
 
 **Unknown / not established:** `0x54=49601` could be a composite word
 (0xC1C1), not a unique pause code. Do not use it to detect pause.
-`0x50=7` was observed during pause, but DeviceGetInfo continued reporting it
-after power-off. Consequently the **power code takes precedence**.
+`0x50=7` appears in DeviceGetInfo both **during pause and after power-off**.
+`0x01=2` ALSO occurs in both states; contrary to the first interpretation,
+it is **not a unique power-off signal**. The difference in these two observed
+samples is whether the **latest** account overview independently returned a
+fresh numeric `0x50=7` (pause) or an `empty_string` (after power-off).
 
 ## First Home Assistant on-device check (2026-11-21 13:54:46 Asia/Taipei)
 
@@ -81,17 +84,24 @@ that old cached `0x54=49601` must never become a live phase label.
 
 All model checks use exactly `NA-LX128B`.
 
-1. If DeviceGetInfo `0x01=2`, report `off`, even if DeviceGetInfo
-   `0x50` still says `7` (previous pause).
-2. Otherwise DeviceGetInfo `0x50=1` → `standby`.
-3. Otherwise DeviceGetInfo `0x50=7` → `paused`.
-4. Otherwise DeviceGetInfo `0x50=2` → `running`, with conditional
+1. If DeviceGetInfo `0x01=2` **and** `0x50=7`, disambiguate using the
+   latest matched overview GET, only if it is within five minutes:
+   - New numeric `overview 0x50=7`, observed at precisely the same response
+     timestamp → `paused`.
+   - `overview 0x50` is `empty_string` → tentative `off`.
+   - No recent matched response, stale cache, errors, unrecognized codes
+     → unknown, **not automatically `off`**.
+2. For other combinations with `0x01=2`, return unknown until separately
+   observed.
+3. Otherwise DeviceGetInfo `0x50=1` → `standby`.
+4. Otherwise DeviceGetInfo `0x50=7` → `paused`.
+5. Otherwise DeviceGetInfo `0x50=2` → `running`, with conditional
    subdivision only if **both** account-level overview codes `0x50=2`
    and `0x54` were numeric on the **same latest successful response**:
    - `0x54=5` → `spinning` (one matching wash+dry sample)
    - `0x54=6` → `drying`
    - `0x54=11` → `soft_keeping`
-5. Any unrecognized/missing DeviceGetInfo operation code → unknown
+6. Any unrecognized/missing DeviceGetInfo operation code → unknown
    (`None`), **not a guessed state**.
 
 For step 4, the overview response must have been observed within 5 minutes.
@@ -102,7 +112,10 @@ HA entity attributes include the source raw codes, their timestamps and
 
 This is a **display-only interpretation**, not proof of actual power draw,
 network connectivity, or a vendor-supported machine state. The off/paused
-transitions may still lag until DeviceGetInfo changes. The current HA
+transitions may lag or briefly show unknown between polling. Because the
+cloud can return empty codes transiently even during operation, interpreting
+a blank latest overview as `off` is still a **provisional heuristic** and
+needs more live validation. The current HA
 `available` flag can remain true when the official app calls a powered-off
 washer 'offline'; do not equate the two concepts.
 
@@ -286,6 +299,35 @@ was **observed**, which does not rule out a brief transient stage
 between samples. The App's 16:22 estimate matched its transition
 minute on this occasion.
 
+## Corrected 16:28 pause interpretation: power code alone is ambiguous
+
+At **16:28:13 Asia/Taipei** on 2026-11-21, the user pressed pause during
+anti-crease holding. The official App showed **一時停止中**, but the deployed
+experimental HA sensor incorrectly displayed **關機**. DeviceGetInfo reported
+`0x01=2` **and** `0x50=7`. These values were previously taken as proof
+of power-off based on a single after-off observation; this was wrong.
+
+Crucially, the latest successful `UserGetDeviceStatus` GET at 16:28:13
+returned a **new numeric** `overview 0x50=7`, observed at exactly the same
+timestamp. `overview 0x54=11` had an older observation timestamp at
+**16:25:09** (the preceding anti-crease phase) and was
+`empty_string` in the new response, so `0x54=11` must not
+override the pause. `0x41`, `0x4F`, and `0x20` were also empty.
+
+In contrast, after **physical power-off** at 13:36:40, DeviceGetInfo also
+showed `0x01=2` and `0x50=7`, but the **new** overview GET
+returned `0x50=empty_string`, retaining the previously seen `7`
+in the 15-minute numeric cache. Thus the overview response *freshness and
+classification* are essential for distinguishing these two states.
+
+**Fix in Draft PR #3:** prefer `paused` for verified fresh numeric
+overview `0x50=7`, use `off` tentatively when the latest
+response is blank, and return unknown for missing/stale/error data.
+The new attributes include `overview_0x50_live_classification` so
+real-device testing can verify why a label was selected. No increased API
+polling or writes. The previous deployed version must be updated
+explicitly to pick up this change.
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
@@ -299,9 +341,15 @@ reverse engineering:
   states **door closed but remote control disabled** versus **remote enabled
   (door locked)**. A separate door-lock sensor requires independent evidence;
   do not use `0x74` as a door-contact signal.
-- [ ] Capture `0x01` and both variants of `0x50` **at the moment of pause**
-  during washing, not only after drying/anti-crease; confirm pause `7` and
-  whether `0x01` changes.
+- [x] Capture `0x01=2`, DeviceGetInfo `0x50=7` and **fresh**
+  overview `0x50=7` while the App says 一時停止中 after anti-crease
+  (16:28:13). Confirmed old `off` priority was incorrect.
+- [ ] Repeat pause during washing, not only after drying/anti-crease; test
+  whether the same overview freshness rule distinguishes a pause.
+- [ ] With normal use, check physical **power-off** after the pause:
+  DeviceGetInfo `0x01/0x50` plus new overview response classification.
+  In particular check whether a blank response can occur *while still paused*
+  (which would cause an experimental false `off` label).
 - [x] Observe `0x54=5` → `0x54=6` during the same wash+dry cycle as the official App changes from spinning (14:59) to drying (15:24) on 2026-11-21.
 - [ ] During a later normal wash+dry session, record official App phase
   alongside fresh `0x54=3` and `0x54=4` to test possible wash and rinse
