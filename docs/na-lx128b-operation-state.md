@@ -46,9 +46,17 @@ This confirms **`0x74` as a useful independent permission flag** in this
 single transition, without changing the overall standby state. The existing
 washer binary sensor `remote_control_allowed` already uses `0x74` and
 interprets `0` as disabled and `1` as enabled. Do not duplicate it in
-the new operation-state enum, and do not infer the door's closed state from
-`0x74`: two user actions (door closure and permission button) happened
-together, and no independent door-readout was recorded.
+the new operation-state enum.
+
+**User-confirmed physical behavior:** The remote-control button has no effect
+while the washer door is open. Closing the door is a prerequisite to enabling
+remote control; pressing the button after closing the door **locks the door**.
+Consequently, `0x74=1` was observed during the locked-for-remote-control
+condition. It is *not* proof that `0x74` directly exposes an independent
+physical door-closed or lock sensor: a closed door may have remote permission
+disabled, and other phases might lock the door for unrelated reasons. Keep
+door-open, door-locked, and remote-control-permitted as distinct concepts
+until separately observed.
 
 The overview response still showed `0x50=1` with `0x54`, `0x41`,
 `0x4F`, and `0x20` empty. This is consistent with standby and reinforces
@@ -91,9 +99,10 @@ reverse engineering:
   starting a programme**, and verify that `0x74` returns to `0` while
   `0x01=3`, `0x50=1` remain in standby. If the app changes its display,
   note that as an independent confirmation.
-- [ ] If convenient, separate the **door-close** action from the
-  **remote-permission** button action to avoid assuming `0x74` is a door
-  contact sensor.
+- [ ] When convenient during normal use, confirm the separate
+  states **door closed but remote control disabled** versus **remote enabled
+  (door locked)**. A separate door-lock sensor requires independent evidence;
+  do not use `0x74` as a door-contact signal.
 - [ ] Capture `0x01` and both variants of `0x50` **at the moment of pause**
   during washing, not only after drying/anti-crease; confirm pause `7` and
   whether `0x01` changes.
