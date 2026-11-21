@@ -203,7 +203,7 @@ def test_diagnostic_summary_distinguishes_blank_absent_valid_and_invalid():
     }
     assert "washer-gw" not in str(result)
     assert "-1683.3" not in str(result)
-    assert "2" not in str(result)
+    assert "Status" not in str(result)
 
 
 def test_diagnostic_summary_missing_status_field_and_unknown_gateway():
