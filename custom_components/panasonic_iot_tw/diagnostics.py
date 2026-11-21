@@ -75,13 +75,42 @@ _OVERVIEW_STATE_WORDS = {
 
 # Overview's CommandType contains a short hexadecimal register address,
 # such as "0x05"; unlike arbitrary free text, this is safe to report.
-# Status is deliberately limited to small numeric, date/time, and known
-# status words; unknown text (including possible identifiers) stays masked.
+# Status permits short readable text after a credential/identifier check;
+# unrelated free text and sensitive fields remain masked.
 _OVERVIEW_SCALAR_FIELDS = {
     "AreaID", "SeqNo", "Time", "Status", "CommandType",
     "status", "RemainingTime", "EstimatedFinish",
 }
 _OVERVIEW_LIST_LIMIT = 128
+# The previous field format whitelist masked every non-numeric Status. A
+# diagnostic-only snapshot can preserve short human-readable status text,
+# while rejecting likely credentials, identifiers and embedded private data.
+_OVERVIEW_STATUS_SENSITIVE = re.compile(
+    r"auth|token|gwid|password|secret|bearer|credential|account|"
+    r"email|phone|serial|device.?id|(?:^|[=:\s])mac(?:$|[=:\s])",
+    re.IGNORECASE,
+)
+_OVERVIEW_STATUS_EMAIL = re.compile(
+    r"(?<![\w.+-])[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}(?![\w.-])"
+)
+_OVERVIEW_STATUS_IDENTIFIER = re.compile(
+    r"(?<![A-Za-z0-9])(?:[A-Za-z0-9_-]{32,}|[A-Fa-f0-9]{20,})(?![A-Za-z0-9])"
+)
+
+
+def _safe_status_text(value: str) -> str:
+    """Expose short status payloads without leaking obvious private strings."""
+    if len(value) > 512:
+        return f"<status omitted; length={len(value)}>"
+    if not value.isprintable():
+        return "<non-printable status>"
+    if (
+        _OVERVIEW_STATUS_SENSITIVE.search(value)
+        or _OVERVIEW_STATUS_EMAIL.search(value)
+        or _OVERVIEW_STATUS_IDENTIFIER.search(value)
+    ):
+        return "<redacted-sensitive-status>"
+    return value
 
 
 def _safe_overview_shape(
@@ -130,6 +159,8 @@ def _safe_overview_shape(
     if isinstance(value, (int, float)):
         return value if abs(value) <= 100000 else "<large number>"
     if isinstance(value, str):
+        if field == "Status":
+            return _safe_status_text(value)
         if (
             _OVERVIEW_NUMBER.fullmatch(value)
             or _OVERVIEW_TIME.fullmatch(value)
