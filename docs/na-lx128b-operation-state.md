@@ -23,6 +23,8 @@ All times below are local Asia/Taipei times on **2026-11-21**.
 | Powered off (app showed offline) | `2` | `7` (unchanged after pause) | previous `7` **cached** | previous `49601` **cached** | 13:36:40 new overview GET returned *all empty strings* |
 | On, standby / 待機中 | `3` | `1` | `1` **fresh** | previous `49601` **cached** | 13:39:45; overview `0x54` was empty again |
 
+| On, standby with remote control permission | `3` | `1` | `1` **fresh** | no valid value | 13:48:57; DeviceGetInfo `0x74` changed from `0` in ordinary standby to `1` after closing the door and enabling remote control; official App recognized permission |
+
 The apparent discrepancy in the final two rows is **intentional**.
 `overview_status` holds per-code numeric values for up to 15 minutes; check
 `overview_observed_at` plus `overview_last_response_summary` rather than
@@ -32,6 +34,26 @@ trusting its presence as a fresh reading.
 (0xC1C1), not a unique pause code. Do not use it to detect pause.
 `0x50=7` was observed during pause, but DeviceGetInfo continued reporting it
 after power-off. Consequently the **power code takes precedence**.
+
+## Remote control permission is separate from operation state
+
+Live observation at **13:48:57**: user closed the washer door and pressed the
+machine's remote-control permission button. The official Smart App detected
+remote control enabled. DeviceGetInfo reported `0x01=3`, `0x50=1`,
+and **`0x74=1`**. The earlier ordinary-standby sample had
+`0x01=3`, `0x50=1`, and `0x74=0`.
+
+This confirms **`0x74` as a useful independent permission flag** in this
+single transition, without changing the overall standby state. The existing
+washer binary sensor `remote_control_allowed` already uses `0x74` and
+interprets `0` as disabled and `1` as enabled. Do not duplicate it in
+the new operation-state enum, and do not infer the door's closed state from
+`0x74`: two user actions (door closure and permission button) happened
+together, and no independent door-readout was recorded.
+
+The overview response still showed `0x50=1` with `0x54`, `0x41`,
+`0x4F`, and `0x20` empty. This is consistent with standby and reinforces
+that old cached `0x54=49601` must never become a live phase label.
 
 ## Conservative mapping for the new sensor
 
@@ -66,6 +88,13 @@ washer 'offline'; do not equate the two concepts.
 Tests to do during **normal usage**, not by interrupting a cycle solely for
 reverse engineering:
 
+- [ ] During ordinary use, disable remote-control permission **without
+  starting a programme**, and verify that `0x74` returns to `0` while
+  `0x01=3`, `0x50=1` remain in standby. If the app changes its display,
+  note that as an independent confirmation.
+- [ ] If convenient, separate the **door-close** action from the
+  **remote-permission** button action to avoid assuming `0x74` is a door
+  contact sensor.
 - [ ] Capture `0x01` and both variants of `0x50` **at the moment of pause**
   during washing, not only after drying/anti-crease; confirm pause `7` and
   whether `0x01` changes.
