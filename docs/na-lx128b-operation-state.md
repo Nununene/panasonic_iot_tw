@@ -137,6 +137,27 @@ on-device. Likewise `soft_keeping`, `paused`, and `off` still need
 live validation with the new entity. The cloud-based drying remaining
 time is independently unresolved.
 
+## Drying ETA revision while cloud timing fields remain blank (2026-11-21)
+
+The same wash+dry programme remained **乾衣中** in the official Panasonic
+App at **15:56 Asia/Taipei**, but its predicted completion moved from
+**16:57** (still shown at 15:24) to **16:21**, a **36-minute earlier**
+estimate. At 15:56 this represents approximately 25 minutes remaining.
+
+Diagnostics from the **15:54:27** account-level GET reported fresh
+`overview 0x50=2`, `0x54=6` (both numeric and observed at the exact same
+timestamp). `0x41`, `0x4F`, and `0x20` were each
+`empty_string` in the most recent response. `overview_expected_finish_at`
+and `overview_eta_observed_at` were null. DeviceGetInfo retained
+`0x01=1`, `0x50=2`, and remote permission `0x74=0`.
+
+This is a second recent sample of a **stable running dryer phase `0x54=6`**
+and direct evidence that the two currently probed time codes cannot account
+for the App's changing ETA during this cycle. **Do not conclude** that the
+App necessarily uses another endpoint: other fields, separate requests,
+server state, or local calculations remain possible. Do not synthesize a HA
+ETA from the App's display without a reliable machine-readable source.
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
