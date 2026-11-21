@@ -11,6 +11,9 @@ from typing import Any
 
 OVERVIEW_CODES = ("0x41", "0x4F", "0x50", "0x54", "0x20")
 OVERVIEW_POLL_INTERVAL = timedelta(minutes=3)
+# When a washer is running but the cloud returned only empty minute fields,
+# allow a bounded extra attempt on the next coordinator update. Never spin.
+OVERVIEW_MISSING_ETA_RETRY_INTERVAL = timedelta(minutes=1)
 OVERVIEW_FRESHNESS = timedelta(minutes=15)
 MAX_REMAINING_MINUTES = 599
 _INTEGER = re.compile(r"-?\d{1,6}\Z")
