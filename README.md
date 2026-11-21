@@ -18,7 +18,7 @@ native Home Assistant entities. This is a `cloud_polling` integration.
 | **Air Conditioner** | climate, sensor, switch, select, number | Temperature / mode / fan / swing, nanoeX, ECONAVI, turbo, self-clean, timers, indoor & outdoor temperature, PM2.5 |
 | **Dehumidifier** | humidifier, sensor, binary_sensor, switch, select, number, button | Target humidity, operation mode, fan direction, tank-full, nanoe, PM2.5, on/off timers |
 | **Refrigerator** | sensor, binary_sensor, switch, select | Freezer / fridge / partial-freeze temperature, fresh-freezing / winter / shopping / vacation modes, ECO, defrost, nanoe, ice-making, energy / CO₂ / door-open sensors, door-ajar alarm |
-| **Washing Machine** | sensor, binary_sensor | Operation status, cycle message, remaining time, panel error code, detergent low, per-stage engineering-info bits, remote operation permission |
+| **Washing Machine** | sensor, binary_sensor | Operation status, cycle message, washing / drying remaining time, washer / dryer panel error codes, detergent low, wash / dry stage, remote operation permission |
 | **Dryer** | sensor, binary_sensor | Operation status, cycle message, remaining time, panel error code, per-stage engineering-info bits, remote operation permission |
 | **ERV (Energy Recovery Ventilator)** | sensor, select | Operation mode, fan level |
 | **Air Purifier** | sensor, switch | Fan level, nanoeX, PM2.5 |
@@ -26,6 +26,8 @@ native Home Assistant entities. This is a `cloud_polling` integration.
 
 Enabled platforms: `climate`, `humidifier`, `sensor`, `binary_sensor`, `switch`,
 `select`, `number`, `button`.
+
+Washer-dryer combo models reported by the cloud as washing machines (device type 3) also query dryer-specific registers `0x05` (remaining time) and `0x0A` (panel error code), and decode the dryer phases from register `0x34`.
 
 ## Requirements
 

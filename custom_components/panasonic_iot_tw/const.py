@@ -231,12 +231,12 @@ DEVICE_STATUS_CODES = {
         ("0x01", True),   # Unknown / Reserved
         ("0x03", False),  # Unknown / Reserved
         ("0x04", False),  # Unknown / Reserved
-        ("0x05", False),  # Unknown / Reserved
-        ("0x0A", False),  # Unknown / Reserved
+        ("0x05", True),   # Drying remaining time on washer-dryer combo models
+        ("0x0A", True),   # Dryer panel error code on washer-dryer combo models
         ("0x13", True),   # Washing remaining time (Min=0 Max=599 minutes)
         ("0x15", True),   # Schedule remaining time (Min=0 Max=24 hours)
         ("0x19", True),   # Error code (0=normal; high byte=panel letter, low byte=number)
-        ("0x34", True),   # Engineering info (bitwise): bit7=prewash(128), bit6=wash(64), bit5=rinse(32), bit4=spin(16)
+        ("0x34", True),   # Laundry phase bits: washer 128/64/32/16; dryer 8/4/2
         ("0x40", False),  # Unknown / Reserved
         ("0x44", False),  # Unknown / Reserved
         ("0x45", False),  # Unknown / Reserved
@@ -479,16 +479,18 @@ DISPENSER_AMOUNT_LEVELS = {
     3: "more",
 }
 
-# Engineering info register 0x34: one bit per phase of the programme, SET
-# while that phase has not finished yet and cleared as it completes. The
-# phase being run is the highest bit still set; the word is 0 once the
-# programme ends. Verified against 22k recorded polls (washer 112 -> 48 -> 16
-# -> 0 while the remaining time fell, dryer 12 -> 4).
+# Engineering info register 0x34 on washer-dryer combo models.
+# Bits are set while a phase has not finished yet and cleared as it completes;
+# the current phase is the highest bit still set. Washer phases use 128/64/32/16
+# and dryer phases use 8/4/2 (observed dryer sequence: 12 -> 4 -> 0).
 WASHING_MACHINE_AVAILABLE_PHASES = {
     128: "prewash",
     64: "washing",
     32: "rinsing",
     16: "spinning",
+    8: "drying",
+    4: "air_flow",
+    2: "soft_cooling",
 }
 
 # ============================================================================

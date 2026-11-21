@@ -72,7 +72,7 @@ class TestWashingMachineDevice:
     def test_get_sensor_entities_count(self, washing_machine_device, mock_coordinator):
         """Test that get_sensor_entities returns correct number of sensors."""
         sensors = washing_machine_device.get_sensor_entities(mock_coordinator)
-        assert len(sensors) == 11  # 2 time + 2 status + stage + 2 dispenser levels + error code + 3 raw registers
+        assert len(sensors) == 13  # Existing washer sensors + combo drying time and dryer error
 
     def test_get_sensor_entities_types(self, washing_machine_device, mock_coordinator):
         """Test that sensor entities have correct types and properties."""
@@ -82,8 +82,8 @@ class TestWashingMachineDevice:
 
             sensors = washing_machine_device.get_sensor_entities(mock_coordinator)
 
-            # Should create 11 sensors
-            assert mock_sensor_class.call_count == 11
+            # Should create 13 sensors
+            assert mock_sensor_class.call_count == 13
 
             # Check specific sensor configurations
             calls = mock_sensor_class.call_args_list
@@ -132,10 +132,18 @@ class TestWashingMachineDevice:
             assert kwargs['value_processor'](3) == "more"
             assert kwargs['value_processor'](512) == "none"
 
+            # Combo dryer sensors are appended to preserve the existing sensor order.
+            assert calls[11][1]["command_type"] == "0x05"
+            assert calls[11][1]["sensor_key"] == "drying_remaining_time"
+            assert calls[11][1]["unit"] == UnitOfTime.MINUTES
+            assert calls[11][1]["gate_command"] == "0x50"
+            assert calls[12][1]["command_type"] == "0x0A"
+            assert calls[12][1]["sensor_key"] == "drying_error_code"
+
     def test_get_binary_sensor_entities_count(self, washing_machine_device, mock_coordinator):
         """Test that get_binary_sensor_entities returns correct number of sensors."""
         sensors = washing_machine_device.get_binary_sensor_entities(mock_coordinator)
-        assert len(sensors) == 7  # 4 phases + detergent + softener + remote control
+        assert len(sensors) == 10  # 4 washer phases + detergent + softener + remote + 3 dryer phases
 
     def test_get_binary_sensor_entities_types(self, washing_machine_device, mock_coordinator):
         """Test that binary sensor entities have correct configurations."""
@@ -145,8 +153,8 @@ class TestWashingMachineDevice:
 
             sensors = washing_machine_device.get_binary_sensor_entities(mock_coordinator)
 
-            # Should create 7 binary sensors
-            assert mock_sensor_class.call_count == 7
+            # Should create 10 binary sensors
+            assert mock_sensor_class.call_count == 10
 
             calls = mock_sensor_class.call_args_list
 
@@ -186,6 +194,21 @@ class TestWashingMachineDevice:
             # Panel permission is not connectivity; it is a diagnostic flag
             assert 'device_class' not in kwargs
             assert kwargs['entity_category'] == EntityCategory.DIAGNOSTIC
+
+            # The appended combo-dryer phase sensors decode the low bits of 0x34.
+            for call, phase, value in zip(
+                calls[7:10],
+                ("drying", "air_flow", "soft_cooling"),
+                (8, 4, 2),
+            ):
+                assert call[1]["command_type"] == "0x34"
+                assert call[1]["gate_command"] == "0x50"
+                assert call[1]["sensor_key"] == {
+                    "drying": "drying_status",
+                    "air_flow": "air_flow_status",
+                    "soft_cooling": "soft_cooling_status",
+                }[phase]
+                assert call[1]["value_processor"](value) is True
 
     def test_engineering_info_sensor_keys(self, washing_machine_device, mock_coordinator):
         """Test that engineering info binary sensors have correct sensor keys."""
@@ -265,6 +288,8 @@ class TestWashingMachineDevice:
             assert sensor_calls[2][1]['translation_key'] == "washing_machine_operation_status"
             assert sensor_calls[3][1]['translation_key'] == "washing_machine_cycle_message"
             assert sensor_calls[4][1]['translation_key'] == "washing_machine_current_stage"
+            assert sensor_calls[11][1]['translation_key'] == "washing_machine_drying_remaining_time"
+            assert sensor_calls[12][1]['translation_key'] == "washing_machine_drying_error_code"
 
             # Reset mock
             mock_binary_sensor_class.reset_mock()
@@ -280,7 +305,10 @@ class TestWashingMachineDevice:
                 "washing_machine_spinning_status",
                 "washing_machine_detergent_low",
                 "washing_machine_softener_low",
-                "washing_machine_remote_control_allowed"
+                "washing_machine_remote_control_allowed",
+                "washing_machine_drying_status",
+                "washing_machine_air_flow_status",
+                "washing_machine_soft_cooling_status"
             ]
 
             for i, expected_key in enumerate(expected_binary_keys):

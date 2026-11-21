@@ -249,7 +249,10 @@
           "washing": "洗衣",
           "rinsing": "洗清",
           "spinning": "脫水",
-          "finished": "完成"
+          "finished": "完成",
+          "drying": "乾衣",
+          "air_flow": "送風",
+          "soft_cooling": "鬆柔冷卻"
         }
       },
       "dryer_current_stage": {
@@ -278,6 +281,12 @@
           "normal": "標準",
           "more": "較多"
         }
+      },
+      "washing_machine_drying_remaining_time": {
+        "name": "乾衣殘時間"
+      },
+      "washing_machine_drying_error_code": {
+        "name": "乾衣錯誤代碼"
       }
     },
     "binary_sensor": {
@@ -348,6 +357,15 @@
           "on": "不足",
           "off": "無警示"
         }
+      },
+      "washing_machine_drying_status": {
+        "name": "進行中 - 乾衣"
+      },
+      "washing_machine_air_flow_status": {
+        "name": "進行中 - 送風"
+      },
+      "washing_machine_soft_cooling_status": {
+        "name": "進行中 - 鬆柔冷卻"
       }
     },
     "switch": {
