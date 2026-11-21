@@ -505,6 +505,44 @@ post-spin observation. Cloud metadata calls `0x4F`
 `nanoe殘時間`, but it was empty here, so it does not establish
 nanoe activity or an ETA.
 
+### Subsequent 20:58:07 snapshot after the user confirmed power-off
+
+The user confirmed that the machine had been **physically off for a while**,
+but HA still displayed **運轉中**. A newly successful
+`UserGetDeviceStatus` response at **20:58:07.992 Asia/Taipei**
+(`2026-11-21T12:58:07.992902+00:00`) was `matched` and
+returned **`empty_string` for all five commands**:
+`0x41`, `0x4F`, `0x50`, `0x54`, `0x20`.
+The stored `overview_status` still showed `0x50=2`,
+`0x54=5` only because their `overview_observed_at` timestamps
+were unchanged at **20:52:00.237**. Thus a newer request
+succeeded, and the two numeric overview values were stale.
+
+The processed DeviceGetInfo `status` remained **`0x01=1`,
+`0x50=2`**, leading the current classifier to output generic
+`running` once the valid phase timestamp exceeded five minutes.
+The diagnostics do **not** expose a per-code DeviceGetInfo read
+timestamp or whether a previous device response was bridged through
+the integration's transient-failure tolerance. We therefore cannot
+distinguish (a) a live cloud response returning out-of-date values,
+(b) the integration retaining last-known-good DeviceGetInfo data, or
+(c) another delay in the device/cloud pipeline using this snapshot
+alone. In particular, `available=true` does not prove a new
+successful DeviceGetInfo read.
+
+This **differs from the earlier pause→power-off case**, whose
+DeviceGetInfo status was `0x01=2,0x50=7` and could be
+disambiguated with a fresh blank overview `0x50`. A blank
+overview alone must **not automatically mean power-off** for
+a device whose DeviceGetInfo still says `0x01=1,0x50=2`:
+blank cloud responses have also occurred during legitimate running.
+A follow-up diagnostic after additional ordinary polling, plus
+a future **read-only DeviceGetInfo freshness/source marker**, would
+help separate cache reuse from cloud lag. Consider representing
+unconfirmed state as unknown only after gathering more evidence,
+instead of inventing `off` from one blank overview.
+
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
@@ -554,11 +592,14 @@ reverse engineering:
 - [x] Verify the **HA experimental sensor shows 鬆柔保持中**
   while the App does; the user confirmed this for the 16:22 transition
   from `0x54=6` to `0x54=11`.
-- [ ] Capture **new, post-power-off diagnostics** after the wash-only
-  App briefly showed NANOE除霉等待中. The 20:52:00 snapshot still
-  held DeviceGetInfo `0x01=1`/`0x50=2` and fresh
-  `overview 0x54=5`; it cannot establish how the off transition
-  was reported. Inspect new response timestamps as well as raw codes.
+- [x] Capture **new post-power-off overview diagnostics** at 20:58:07:
+  five latest `empty_string` commands with `0x50=2,0x54=5`
+  retained only as 20:52:00 numeric cache. HA still displayed 運轉中,
+  and processed DeviceGetInfo retained `0x01=1,0x50=2`.
+- [ ] Determine whether post-power-off DeviceGetInfo `0x01=1,0x50=2`
+  came from a fresh remote reply or integration fallback/cache; current
+  diagnostics contain no per-request proof of that. Track later
+  natural polls without forcing a washer restart.
 - [ ] Observe the brief **NANOE除霉等待中** App stage alongside a
   *fresh synchronized* cloud overview before assigning a stage code.
 - [ ] Verify `0x01=2` after power-off from a running or standby state,
