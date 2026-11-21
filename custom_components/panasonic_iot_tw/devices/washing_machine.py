@@ -325,8 +325,8 @@ class WashingMachineDevice(BaseDevice):
                 data_source="laundry_operation_state",
                 device_class=SensorDeviceClass.ENUM,
                 options=[
-                    "off", "standby", "running", "washing", "spinning",
-                    "drying", "soft_keeping", "paused",
+                    "off", "standby", "running", "washing", "rinsing",
+                    "spinning", "drying", "soft_keeping", "paused",
                 ],
                 icon="mdi:washing-machine",
                 translation_key="washing_machine_laundry_operation_state",
