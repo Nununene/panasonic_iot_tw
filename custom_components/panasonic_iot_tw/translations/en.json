@@ -297,6 +297,7 @@
           "off": "Powered off",
           "standby": "Standby",
           "running": "Running",
+          "spinning": "Spinning",
           "drying": "Drying",
           "soft_keeping": "Anti-crease holding",
           "paused": "Paused"
