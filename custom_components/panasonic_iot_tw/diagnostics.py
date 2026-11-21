@@ -1,14 +1,14 @@
 """Diagnostics support for the Panasonic IoT TW integration."""
 from __future__ import annotations
 
-from typing import Any
 import re
+from typing import Any
 
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 
-from .coordinator import PanasonicConfigEntry
 from .api_constants import API_ENDPOINTS
+from .coordinator import PanasonicConfigEntry
 
 # Keys that carry credentials or personally identifying information. This must
 # cover both the config-entry data/options and the nested device dicts stored in
@@ -50,7 +50,6 @@ TO_REDACT = {
 }
 
 
-
 # This is intentionally a temporary, read-only investigation tool for
 # NA-LX128B and other Type 3 washer-dryer combos. It does not expose raw
 # UserGetDeviceStatus responses, which may contain credentials or identifiers.
@@ -66,14 +65,26 @@ _OVERVIEW_TIME = re.compile(r"(?:[01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?\Z")
 _OVERVIEW_DATE = re.compile(
     r"\d{4}-\d{2}-\d{2}(?:[T ][0-9:.+Z-]{3,30})?\Z"
 )
+_OVERVIEW_HEX_COMMAND = re.compile(r"0[xX][0-9A-Fa-f]{1,4}\Z")
 _OVERVIEW_STATE_WORDS = {
     "success", "ok", "standby", "running", "drying", "washing",
     "finished", "reserved", "error", "idle", "true", "false",
+    "on", "off", "stop", "start", "normal", "unknown", "offline",
+    "online", "complete", "completed", "waiting", "ready",
 }
 
+# Overview's CommandType contains a short hexadecimal register address,
+# such as "0x05"; unlike arbitrary free text, this is safe to report.
+# Status is deliberately limited to small numeric, date/time, and known
+# status words; unknown text (including possible identifiers) stays masked.
+_OVERVIEW_SCALAR_FIELDS = {"AreaID", "SeqNo", "Time", "Status", "CommandType"}
+_OVERVIEW_LIST_LIMIT = 128
 
-def _safe_overview_shape(value: Any, depth: int = 0) -> Any:
-    """Bounded structural sample; never include raw identity or free text."""
+
+def _safe_overview_shape(
+    value: Any, depth: int = 0, field: str = ""
+) -> Any:
+    """Bounded overview snapshot with strict field-level value allowlists."""
     if depth >= 7:
         return "<depth limit>"
     if isinstance(value, dict):
@@ -90,22 +101,38 @@ def _safe_overview_shape(value: Any, depth: int = 0) -> Any:
             if _OVERVIEW_SENSITIVE_KEY.search(str(key)):
                 result[safe_key] = "<redacted>"
             else:
-                result[safe_key] = _safe_overview_shape(child, depth + 1)
+                result[safe_key] = _safe_overview_shape(
+                    child, depth + 1, str(key)
+                )
         return result
     if isinstance(value, list):
-        sample = [_safe_overview_shape(item, depth + 1) for item in value[:5]]
-        if len(value) > 5:
-            sample.append(f"<{len(value) - 5} more items>")
+        # The register List can contain many command codes. Previously
+        # showing only 5 entries concealed potentially relevant values.
+        limit = _OVERVIEW_LIST_LIMIT if field == "List" else 5
+        sample = [
+            _safe_overview_shape(item, depth + 1, field)
+            for item in value[:limit]
+        ]
+        if len(value) > limit:
+            sample.append(f"<{len(value) - limit} more items>")
         return sample
     if isinstance(value, bool) or value is None:
-        return value
+        return value if field in _OVERVIEW_SCALAR_FIELDS else "<scalar>"
+    if field == "CommandType":
+        if isinstance(value, str) and _OVERVIEW_HEX_COMMAND.fullmatch(value):
+            return value
+        return "<unrecognized-command>"
+    if field not in _OVERVIEW_SCALAR_FIELDS:
+        return "<text>"
     if isinstance(value, (int, float)):
         return value if abs(value) <= 100000 else "<large number>"
     if isinstance(value, str):
-        if (_OVERVIEW_NUMBER.fullmatch(value)
+        if (
+            _OVERVIEW_NUMBER.fullmatch(value)
             or _OVERVIEW_TIME.fullmatch(value)
             or _OVERVIEW_DATE.fullmatch(value)
-            or value.lower() in _OVERVIEW_STATE_WORDS):
+            or value.lower() in _OVERVIEW_STATE_WORDS
+        ):
             return value
         return "<text>"
     return f"<{type(value).__name__}>"
