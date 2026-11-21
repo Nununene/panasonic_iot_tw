@@ -1,6 +1,7 @@
 """Diagnostics support for the Panasonic IoT TW integration."""
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -199,6 +200,105 @@ async def _probe_laundry_overview(coordinator: Any) -> dict[str, Any]:
         return {"result": "error", "error_type": type(exc).__name__}
 
 
+
+def _laundry_command_list_summary(response: Any) -> dict[str, Any]:
+    """Summarize read-only command metadata without releasing raw API data."""
+    if not isinstance(response, dict):
+        return {"result": "invalid_response"}
+    gateways = response.get("GwList", [])
+    raw_commands = response.get("CommandList", [])
+    if not isinstance(gateways, list):
+        gateways = []
+    if not isinstance(raw_commands, list):
+        return {"result": "invalid_command_list", "type": type(raw_commands).__name__}
+
+    laundry = [
+        gateway for gateway in gateways
+        if isinstance(gateway, dict) and str(gateway.get("DeviceType")) == "3"
+    ]
+    summaries = []
+    matched_count = 0
+    for index, entry in enumerate(raw_commands[:200]):
+        if not isinstance(entry, dict):
+            continue
+        model_type = str(entry.get("ModelType") or "")
+        device_type = str(entry.get("DeviceType") or "")
+        applicable = any(
+            (not model_type or str(device.get("ModelType") or "") == model_type)
+            and (not device_type or str(device.get("DeviceType") or "") == device_type)
+            for device in laundry
+        )
+        if not applicable:
+            continue
+
+        matched_count += 1
+        payload = entry.get("JSON", entry.get("list", entry.get("List", [])))
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except (ValueError, TypeError):
+                payload = None
+        if isinstance(payload, dict):
+            payload = payload.get("list", payload.get("List", []))
+
+        codes = []
+        item_keys = set()
+        if isinstance(payload, list):
+            for item in payload[:256]:
+                if not isinstance(item, dict):
+                    continue
+                item_keys.update(
+                    str(key) for key in item
+                    if isinstance(key, str) and _OVERVIEW_SAFE_KEY.fullmatch(key)
+                    and not _OVERVIEW_SENSITIVE_KEY.search(key)
+                )
+                command_type = item.get("CommandType")
+                if (isinstance(command_type, str)
+                        and _OVERVIEW_HEX_COMMAND.fullmatch(command_type)):
+                    codes.append(command_type)
+
+        summaries.append({
+            "entry_index": index,
+            "device_type": device_type if device_type.isdigit() else "<other>",
+            "entry_keys": sorted(
+                key for key in entry
+                if isinstance(key, str)
+                and _OVERVIEW_SAFE_KEY.fullmatch(key)
+                and not _OVERVIEW_SENSITIVE_KEY.search(key)
+            )[:30],
+            "command_item_keys": sorted(item_keys)[:30],
+            "command_count": len(codes),
+            "command_codes": list(dict.fromkeys(codes))[:256],
+            "payload_type": type(payload).__name__,
+        })
+
+    return {
+        "result": "ok",
+        "endpoint": "UserGetRegisteredGwList2 (GET, read-only)",
+        "laundry_device_count": len(laundry),
+        "command_list_entry_count": len(raw_commands),
+        "matched_entry_count": matched_count,
+        "matching_entries": summaries[:50],
+    }
+
+
+async def _probe_laundry_command_list(coordinator: Any) -> dict[str, Any]:
+    """Read account command metadata only when diagnostics is downloaded."""
+    app = coordinator.smart_app
+    try:
+        await app._token_manager.ensure_authenticated()
+        response = await app._api_client.request(
+            method="GET",
+            endpoint=API_ENDPOINTS["get_devices"],
+            headers=app._token_manager.get_auth_headers(),
+            log=False,
+        )
+        return _laundry_command_list_summary(response)
+    except Exception as exc:
+        # Never disclose API error messages or raw device identifiers.
+        return {"result": "error", "error_type": type(exc).__name__}
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: PanasonicConfigEntry
 ) -> dict[str, Any]:
@@ -228,6 +328,11 @@ async def async_get_config_entry_diagnostics(
         if has_laundry_device
         else None
     )
+    command_list_probe = (
+        await _probe_laundry_command_list(coordinator)
+        if has_laundry_device
+        else None
+    )
 
     return {
         "entry": {
@@ -248,4 +353,5 @@ async def async_get_config_entry_diagnostics(
         "client": async_redact_data(coordinator.smart_app.get_statistics(), TO_REDACT),
         "data": redacted_devices,
         **({"overview_probe": overview_probe} if overview_probe is not None else {}),
+        **({"command_list_probe": command_list_probe} if command_list_probe is not None else {}),
     }
