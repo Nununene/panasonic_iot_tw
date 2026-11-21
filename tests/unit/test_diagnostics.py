@@ -171,3 +171,47 @@ async def test_laundry_overview_probe_suppresses_error_text():
 
     assert result["overview_probe"] == {"result": "error", "error_type": "ValueError"}
     assert "PRIVATE_AUTH" not in str(result)
+
+
+
+async def test_overview_register_codes_are_visible_but_identifiers_stay_hidden():
+    """Preserve valid short command codes and numeric states across full List."""
+    entry = _entry_with_coordinator()
+    coordinator = entry.runtime_data
+    coordinator.data["device_auth_1"]["device_type"] = 3
+    app = coordinator.smart_app
+    app._token_manager.ensure_authenticated = AsyncMock()
+    app._token_manager.get_auth_headers.return_value = {
+        "cptoken": "HIDDEN_CP_TOKEN"
+    }
+    info = [
+        {"CommandType": f"0x{code:02X}", "Status": str(code)}
+        for code in range(12)
+    ]
+    info[5]["Status"] = "-1683.3"
+    info[10]["Status"] = "SECRET_TOKEN_ABC_12345"
+    info.append({"CommandType": "SECRET_COMMAND_ID", "Status": "SECRET_PASSWORD"})
+    app._api_client.request = AsyncMock(return_value={
+        "GwList": [{
+            "GWID": "PRIVATE_GATEWAY",
+            "List": info,
+        }],
+    })
+
+    result = await async_get_config_entry_diagnostics(Mock(), entry)
+    sample = result["overview_probe"]["overview_shape"]["GwList"][0]["List"]
+
+    assert len(sample) == len(info), "Diagnostic output must not stop at 5 codes"
+    assert sample[5] == {"CommandType": "0x05", "Status": "-1683.3"}
+    assert sample[6] == {"CommandType": "0x06", "Status": "6"}
+    assert sample[10] == {"CommandType": "0x0A", "Status": "<text>"}
+    assert sample[-1] == {
+        "CommandType": "<unrecognized-command>",
+        "Status": "<text>",
+    }
+    dumped = str(result)
+    assert "PRIVATE_GATEWAY" not in dumped
+    assert "HIDDEN_CP_TOKEN" not in dumped
+    assert "SECRET_TOKEN" not in dumped
+    assert "SECRET_PASSWORD" not in dumped
+    assert "SECRET_COMMAND_ID" not in dumped
