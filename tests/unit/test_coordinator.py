@@ -1,5 +1,5 @@
 """Unit tests for the PanasonicCoordinator."""
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from unittest.mock import AsyncMock
@@ -174,3 +174,99 @@ async def test_recovery_resets_outage_tolerance(hass):
             assert await coordinator._async_update_data() == good
         smart_app.get_device_with_info.side_effect = None
         assert await coordinator._async_update_data() == good
+
+
+
+async def test_laundry_overview_preserves_partial_status_and_throttles(hass, monkeypatch):
+    """Only the missing overview fields stay cached when others update."""
+    from datetime import timezone
+
+    entry = _make_entry(hass)
+    smart_app = AsyncMock()
+    smart_app.get_device_with_info.return_value = {
+        "washer-1": {
+            "device_id": "washer-1", "device_type": 3, "gwid": "gw-1",
+            "status": {"0x50": "2"}, "available": True,
+        },
+        "ac-1": {
+            "device_id": "ac-1", "device_type": 1, "gwid": "gw-2",
+            "status": {"0x50": "2"}, "available": True,
+        },
+    }
+    first = datetime(2026, 11, 21, 4, 34, tzinfo=timezone.utc)
+    import custom_components.panasonic_iot_tw.coordinator as coord_mod
+
+    class FakeDateTime(datetime):
+        now_value = first
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.now_value
+
+    monkeypatch.setattr(coord_mod, "datetime", FakeDateTime)
+
+    def payload(values):
+        return {
+            "GwList": [{
+                "GWID": "gw-1",
+                "List": [
+                    {"CommandType": key, "Status": value}
+                    for key, value in values.items()
+                ],
+            }]
+        }
+
+    smart_app.get_laundry_overview.side_effect = [
+        payload({
+            "0x41": "111", "0x4F": "111", "0x50": "2",
+            "0x54": "6", "0x20": "66",
+        }),
+        payload({
+            "0x41": "", "0x4F": "", "0x50": "2",
+            "0x54": "6", "0x20": "",
+        }),
+    ]
+    coordinator = PanasonicCoordinator(hass, entry, smart_app)
+    coordinator.data = await coordinator._async_update_data()
+    assert coordinator.data["washer-1"]["overview_status"]["0x41"] == 111
+    assert "overview_status" not in coordinator.data["ac-1"]
+
+    # One additional normal coordinator update before 3 minutes must NOT
+    # cause an extra cloud request to the overview endpoint.
+    FakeDateTime.now_value = first + timedelta(minutes=1)
+    coordinator.data = await coordinator._async_update_data()
+    assert smart_app.get_laundry_overview.await_count == 1
+
+    FakeDateTime.now_value = first + timedelta(minutes=3)
+    coordinator.data = await coordinator._async_update_data()
+    current = coordinator.data["washer-1"]
+    assert current["overview_status"]["0x41"] == 111
+    assert current["overview_status"]["0x20"] == 66
+    assert current["overview_status"]["0x50"] == 2
+    assert current["overview_observed_at"]["0x41"] == first.isoformat()
+    assert current["overview_observed_at"]["0x50"] == (
+        first + timedelta(minutes=3)
+    ).isoformat()
+    assert smart_app.get_laundry_overview.await_count == 2
+
+
+async def test_overview_api_failure_does_not_break_other_devices(hass):
+    """A cloud overview error cannot bring down other HA entities."""
+    entry = _make_entry(hass)
+    smart_app = AsyncMock()
+    smart_app.get_device_with_info.return_value = {
+        "washer": {
+            "device_type": 3, "gwid": "gw-1",
+            "status": {"0x50": 2}, "available": True,
+        }
+    }
+    smart_app.get_laundry_overview.side_effect = RuntimeError(
+        "gateway token info should never be logged verbatim"
+    )
+    coordinator = PanasonicCoordinator(hass, entry, smart_app)
+
+    data = await coordinator._async_update_data()
+
+    assert data["washer"]["available"] is True
+    assert data["washer"]["overview_status"] == {}
+    assert data["washer"]["overview_expected_finish_at"] is None
