@@ -15,7 +15,8 @@ OVERVIEW_POLL_INTERVAL = timedelta(minutes=3)
 # allow a bounded extra attempt on the next coordinator update. Never spin.
 OVERVIEW_MISSING_ETA_RETRY_INTERVAL = timedelta(minutes=1)
 OVERVIEW_FRESHNESS = timedelta(minutes=15)
-MAX_REMAINING_MINUTES = 599
+# NA-LX128B CommandList: 0x41 洗衣殘時間, allowed range 0..1440 min.
+MAX_REMAINING_MINUTES = 1440
 _INTEGER = re.compile(r"-?\d{1,6}\Z")
 
 
@@ -180,29 +181,21 @@ def attach_laundry_overview(
             device["overview_eta_command"] = None
             continue
 
-        # 0x41 matches the whole-programme ETA even during spinning.
-        # 0x4F may instead describe *current phase* minutes: in a
-        # wash+dry cycle 0x41=116 and 0x4F=11 during spinning, and
-        # 0x54 changed from 5 (spin) to 6 (dry) ~12 minutes later.
-        # Only fall back to 0x4F during a fresh, confirmed drying phase,
-        # where previous independent observations saw 0x41 == 0x4F.
-        candidate_code = None
-        if "0x41" in incoming and 0 <= incoming["0x41"] <= MAX_REMAINING_MINUTES:
-            candidate_code = "0x41"
-        elif (
-            incoming.get("0x50") == 2
-            and incoming.get("0x54") == 6
-            and "0x4F" in incoming
-            and 0 <= incoming["0x4F"] <= MAX_REMAINING_MINUTES
+        # NA-LX128B CommandList metadata identifies 0x41 as
+        # "洗衣殘時間" and 0x4F as "nanoe殘時間".
+        # Their occasional equality during drying does NOT authorize
+        # using nanoe minutes as a whole-programme completion ETA.
+        minutes = incoming.get("0x41")
+        if (
+            minutes is not None
+            and 0 <= minutes <= MAX_REMAINING_MINUTES
+            and values.get("0x50") == 2
         ):
-            candidate_code = "0x4F"
-        if candidate_code is not None and values.get("0x50") == 2:
-            minutes = incoming[candidate_code]
             device["overview_expected_finish_at"] = (
                 now + timedelta(minutes=minutes)
             ).isoformat()
             device["overview_eta_observed_at"] = now.isoformat()
-            device["overview_eta_command"] = candidate_code
+            device["overview_eta_command"] = "0x41"
             continue
 
         last_seen = _read_iso_time(before.get("overview_eta_observed_at"))
@@ -211,6 +204,7 @@ def attach_laundry_overview(
             not stopped
             and _is_recent(last_seen, now)
             and last_eta is not None
+            and before.get("overview_eta_command") == "0x41"
             and values.get("0x50") == 2
         ):
             device["overview_expected_finish_at"] = last_eta.isoformat()
