@@ -462,6 +462,49 @@ also displayed 脫水中** in this wash-only cycle, matching the official
 App and the fresh 20:45:52 cloud sample. This completes end-to-end
 wash-only spinning state validation without any HA restart or code changes.
 
+## Wash-only end: reported nanoe anti-mold wait, then power-off (2026-11-21)
+
+Following the same wash-only cycle, the user reported that **after
+spinning finished**, the official Panasonic App briefly showed
+**「NANOE除霉等待中」** and the washer was switched off shortly
+afterwards. At the time of the report, the HA experimental operation
+sensor showed the generic **運轉中**, not a specialized nanoe wait or
+off state.
+
+The attached diagnostic snapshot's **most recent successful overview**
+was at **20:52:00.237 Asia/Taipei** (UTC 12:52:00.237).
+Both `0x50=2` and `0x54=5` were fresh, synchronized numeric
+values **at that specific timestamp**. DeviceGetInfo in the snapshot
+also reported `0x01=1` and `0x50=2`; the rest of the status
+included `0x55=0`, `0x72=8192`, `0x73=1`,
+`0x74=0`. `0x41`, `0x4F`, `0x20` again
+returned empty strings and there was no HA ETA.
+
+**Do not assign a nanoe or finished-phase code from this sample.**
+Although the app reportedly moved beyond spin, the sampled overview
+still said `0x54=5`, and there is **no fresh cloud or
+DeviceGetInfo evidence from after that reported transition**.
+The actual transition times and manner of power-off were not
+captured. The app's brief nanoe message is a useful observation,
+but is not yet tied to a register value.
+
+The HA classifier deliberately returns generic `running` if
+DeviceGetInfo still reports `0x50=2` while a detailed-phase sample
+is older than its five-minute freshness window. The reported
+`運轉中` is therefore *consistent with* stale phase handling;
+it does **not** prove that polling stopped, nor that nanoe wait
+means generic running. A **new diagnostic capture after power-off**
+should compare DeviceGetInfo `0x01`/`0x50`,
+`overview_last_response_at`, latest `0x50` response
+classification, and observed timestamps. The earlier
+paused→powered-off heuristic may not cover a wash-only cycle
+that was switched off directly after completion.
+
+No classifier or ETA changes are warranted without a new synchronized
+post-spin observation. Cloud metadata calls `0x4F`
+`nanoe殘時間`, but it was empty here, so it does not establish
+nanoe activity or an ETA.
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
@@ -511,6 +554,13 @@ reverse engineering:
 - [x] Verify the **HA experimental sensor shows 鬆柔保持中**
   while the App does; the user confirmed this for the 16:22 transition
   from `0x54=6` to `0x54=11`.
+- [ ] Capture **new, post-power-off diagnostics** after the wash-only
+  App briefly showed NANOE除霉等待中. The 20:52:00 snapshot still
+  held DeviceGetInfo `0x01=1`/`0x50=2` and fresh
+  `overview 0x54=5`; it cannot establish how the off transition
+  was reported. Inspect new response timestamps as well as raw codes.
+- [ ] Observe the brief **NANOE除霉等待中** App stage alongside a
+  *fresh synchronized* cloud overview before assigning a stage code.
 - [ ] Verify `0x01=2` after power-off from a running or standby state,
   not only after a pause; verify `0x01=3` on a second power-on.
 - [ ] Observe the meaning of DeviceGetInfo `0x50=3,4,5,8` for
