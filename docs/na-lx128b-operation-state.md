@@ -121,6 +121,22 @@ were `empty_string` in the 15:24 overview read. The alternate App ETA source
 remains unknown. The existing operation-state classifier already maps fresh
 `0x54=6` to `drying`; no additional code change is needed for that phase.
 
+## First Home Assistant live drying-phase validation (2026-11-21)
+
+During the ongoing wash+dry cycle, the user confirmed that the **deployed
+experimental HA entity displayed `乾衣中`** while the official Panasonic
+App also displayed drying. The accompanying 15:23:47 Asia/Taipei overview
+sample had `0x50=2` and `0x54=6`, both numeric in the same successful
+response. This validates the full chain **official App → cloud response →
+experimental HA state** for the `drying` label on this NA-LX128B.
+
+This is separate from the earlier first live validation of `standby`.
+The `spinning` label (for `0x54=5`) was added to the draft branch
+after the user observed it, but its HA display has not yet been checked
+on-device. Likewise `soft_keeping`, `paused`, and `off` still need
+live validation with the new entity. The cloud-based drying remaining
+time is independently unresolved.
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
