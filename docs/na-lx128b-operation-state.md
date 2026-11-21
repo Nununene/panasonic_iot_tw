@@ -328,6 +328,35 @@ real-device testing can verify why a label was selected. No increased API
 polling or writes. The previous deployed version must be updated
 explicitly to pick up this change.
 
+## Corrected classifier: real HA pause → powered-off validation (2026-11-21)
+
+After deploying the fix from commit `b8b49c9`, the user confirmed the new
+experimental HA entity displayed **一時停止中** while the washer was paused.
+They then switched off the washer normally; after a successful refresh the
+same entity displayed **關機**. Both transitions matched the user's
+physical actions (and earlier paused state was also confirmed in the official
+App).
+
+Final *powered-off* diagnostics showed DeviceGetInfo `0x01=2`,
+`0x50=7`, and `available=true`. The **last numeric** overview
+`0x50=7` was observed at **16:35:23.963 Asia/Taipei**; the
+**latest successful** `UserGetDeviceStatus` request at
+**16:38:39.873 Asia/Taipei** returned **empty strings for all five
+overview commands**, so the cached `7` is not a current reading.
+
+The corrected classifier accordingly produced the expected two different
+states even though DeviceGetInfo `0x01=2, 0x50=7` stayed unchanged:
+**fresh numeric overview 0x50=7 → paused**, then
+**fresh empty overview 0x50 → tentative off**. This is the first
+successful end-to-end HA test of the pause/power-off distinction.
+
+The cloud can occasionally return blank codes while a programme is running,
+so **one empty response is not authoritative proof of physical power-off**
+in every circumstance. Keep the classification experimental and verify
+future unusual state changes against the app and sensor timestamps.
+`available=true` is the integration's availability flag; it does not
+prove the washer is powered on.
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
@@ -346,10 +375,12 @@ reverse engineering:
   (16:28:13). Confirmed old `off` priority was incorrect.
 - [ ] Repeat pause during washing, not only after drying/anti-crease; test
   whether the same overview freshness rule distinguishes a pause.
-- [ ] With normal use, check physical **power-off** after the pause:
-  DeviceGetInfo `0x01/0x50` plus new overview response classification.
-  In particular check whether a blank response can occur *while still paused*
-  (which would cause an experimental false `off` label).
+- [x] Confirm **powered-off** after pause on the corrected HA classifier:
+  16:38:39 fresh blank overview response with DeviceGetInfo `0x01=2`,
+  `0x50=7` correctly displayed 關機.
+- [ ] Check whether a blank overview response can occur **while still paused**
+  (which would cause an experimental false `off` label); do not treat
+  this single successful transition as proof the heuristic is infallible.
 - [x] Observe `0x54=5` → `0x54=6` during the same wash+dry cycle as the official App changes from spinning (14:59) to drying (15:24) on 2026-11-21.
 - [ ] During a later normal wash+dry session, record official App phase
   alongside fresh `0x54=3` and `0x54=4` to test possible wash and rinse
