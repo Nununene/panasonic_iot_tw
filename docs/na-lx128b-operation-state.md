@@ -10,6 +10,39 @@ The new HA enum entity is **Washer-Dryer Operation State (Experimental)**,
 unique-ID suffix `laundry_operation_state`. It **does not control the machine**,
 change polling rates, or interfere with drying ETA logic.
 
+## Model command metadata acquired after live tests
+
+The user performed a separate **read-only** command-schema lookup from
+`GET /api/UserGetRegisteredGwList2`. The resulting filtered export
+matched **NA-LX128B / LX128B**, device type **3**, with twelve commands
+and command-set timestamp **202204180700**.
+
+Cloud-provided descriptions for `0x54` (**工程訊息**) include:
+
+| Code | Metadata text | Real-device App comparison |
+| --- | --- | --- |
+| 1 | 預洗 | Not yet observed |
+| 2 | 浸泡 | Not yet observed |
+| 3 | 洗衣 | 14:00:57 HA history code observed; App not contemporaneously checked |
+| 4 | 洗清 | 14:28:34 HA history code observed; App not contemporaneously checked |
+| 5 | 脫水 | Live App and cloud agree |
+| 6 | 冷風乾燥 | Live App said 乾衣中; UI wording differs |
+| 9 | 冷卻 | Not yet observed |
+| 11 | 延後晾衣 | Live App and HA said 鬆柔保持中; UI wording differs |
+
+The same metadata labels `0x50` **運轉情報**, enum
+`1=待機中`, `2=動作中`, `3/4=預約中`, `5=終了`.
+**It omits `0x50=7`**, which was observed during real pause. Therefore
+these 2022 definitions are helpful semantic evidence, but incomplete
+for 2026 runtime behaviour. Preserve the live App-tested labels and
+experimental off/pause distinction.
+
+It also defines **`0x41=洗衣殘時間`** (range 0–1440 minutes)
+and **`0x4F=nanoe殘時間`** (range 0–1440 minutes).
+This contradicts the earlier guess that 0x4F was the current spin
+phase's countdown. The ETA policy was corrected on this branch to
+use **0x41 only**; never synthesize programme completion from 0x4F.
+
 ## Evidence observed together with official Smart App
 
 All times below are local Asia/Taipei times on **2026-11-21**.
@@ -209,35 +242,20 @@ through `3 → 4 → 5 → 6`:
 During initial running at **14:00:57**, the remote-permission binary sensor
 changed to off; this is an independent flag, not a phase code.
 
-### A strong new candidate interpretation of 0x41 versus 0x4F
+### Earlier 0x4F phase-minute hypothesis: **superseded by metadata**
 
-At **15:02:20**, while the programme was still in the spinning segment
-(`0x54=5` until 15:14:36), the API returned **`0x41=116` and
-`0x4F=11`**. The HA computed a finish at **16:58:19** from
-`0x41=116`, closely matching the official App's **16:57** forecast
-observed at 14:59.
+At 15:02:20 the cloud reported `0x41=116`, `0x4F=11`
+during spinning (`0x54=5`). The HA 0x41-derived finish near
+16:58 matched the App's approximately 16:57 estimate. The apparent
+match between 11 minutes and the later 15:14 drying transition initially
+suggested that 0x4F was a current-stage countdown.
 
-In contrast, 11 minutes after 15:02 is **about 15:13**, close to the
-next observed transition from spin (`0x54=5`) to drying
-(`0x54=6`) at **15:14:36**. This suggests:
-
-- `0x41`: **total programme remaining minutes**, even before drying;
-- `0x4F`: potentially **current phase remaining minutes**.
-
-These are **hypotheses**, not established vendor meanings. The previous
-drying-only observations saw both `0x41` and `0x4F` equal 111, then
-105, compatible with a phase that occupied the rest of the programme.
-Still needed: repeated paired readings in wash/rinse/spin/cooling and
-confirmation of both meaning and App ETA after programme adjustments.
-
-### Implication for the experimental HA ETA
-
-The initial ETA implementation treated `0x4F` as a general fallback
-whenever `0x41` was blank. That could incorrectly show *11 minutes to
-programme completion* if the overview returned `0x4F=11` alone during
-spinning. The draft now allows `0x4F` to provide an ETA **only when
-fresh overview `0x50=2` and `0x54=6` confirm drying together**;
-`0x41` remains the preferred overall-programme source.
+**That hypothesis is no longer supported**: the model's CommandList
+explicitly labels `0x4F` as **nanoe殘時間**. No interpretation of
+the observed 11 minutes as "time to drying" should be made.
+The now-corrected implementation uses only `0x41` for ETA;
+`0x4F` remains a read-only diagnostic. Equality of 0x41 and 0x4F
+in earlier drying snapshots is not sufficient evidence to override this.
 
 The existing entity named "drying remaining time" may actually represent
 **programme remaining time** from `0x41` in a combined wash+dry mode.
@@ -382,13 +400,15 @@ reverse engineering:
   (which would cause an experimental false `off` label); do not treat
   this single successful transition as proof the heuristic is infallible.
 - [x] Observe `0x54=5` → `0x54=6` during the same wash+dry cycle as the official App changes from spinning (14:59) to drying (15:24) on 2026-11-21.
-- [ ] During a later normal wash+dry session, record official App phase
-  alongside fresh `0x54=3` and `0x54=4` to test possible wash and rinse
-  mappings; the CSV alone does not confirm their meanings.
-- [ ] Capture `0x41` and `0x4F` **at the same read** in multiple
-  different phases and compare to both App's total completion estimate
-  and subsequent phase transitions. Especially test whether `0x4F` is
-  the current phase countdown and whether `0x41` is total programme time.
+- [ ] During a later normal wash+dry session, compare official App
+  wording to metadata `0x54=3` (洗衣) and `0x54=4` (洗清).
+  Cloud metadata now supplies their meanings, but the CSV alone did not
+  establish the App labels at those exact timestamps.
+- [ ] Check `0x41` (metadata: 洗衣殘時間) against App completion
+  time across future cycles. Investigate `0x4F` (metadata: nanoe殘時間)
+  separately, without treating it as current-stage or total ETA.
+- [ ] Observe the official App if `0x54=9` (metadata: 冷卻) ever appears,
+  and whether it occurs between `0x54=6` and `0x54=11`.
 - [ ] Repeat `0x54=5` during spin in a wash-only programme as well as
   wash+dry; check if rinse/spin transitions use a different code.
 - [ ] Repeat `0x54=6` in a drying programme, and verify that a *wash-only*
