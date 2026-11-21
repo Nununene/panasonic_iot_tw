@@ -457,9 +457,10 @@ observation times, not exact mechanical phase-transition instants.
 
 The Draft PR classifier **already supports** fresh synchronized
 `0x54=5` → `spinning`, so **no code change is required**.
-Whether the deployed HA experimental sensor actually displayed
-**脫水中** in this run has not yet been reported; keep this
-end-to-end check open.
+The user subsequently confirmed the **deployed HA experimental sensor
+also displayed 脫水中** in this wash-only cycle, matching the official
+App and the fresh 20:45:52 cloud sample. This completes end-to-end
+wash-only spinning state validation without any HA restart or code changes.
 
 ## Unresolved observations and suggested future tests
 
@@ -499,9 +500,8 @@ reverse engineering:
 - [x] Confirm `0x54=5` during **wash-only** spin after
   `0x54=4` rinse at 20:45:52 on 2026-11-21; App and cloud match.
   Code `5` had also been confirmed during wash+dry spin.
-- [ ] Check whether deployed HA experimental sensor shows 脫水中
-  in a live wash-only spinning phase. The API and code support it,
-  but this run's HA display has not yet been reported.
+- [x] Confirm deployed HA experimental sensor shows 脫水中 during
+  the 20:45 wash-only spinning phase, matching App and API.
 - [ ] Repeat `0x54=6` in a drying programme, and verify that a *wash-only*
   programme never uses it for an unrelated phase.
 - [x] Repeat `0x54=11` in anti-crease holding with DeviceGetInfo `0x01=1` (16:22:05, second wash+dry cycle on 2026-11-21).
