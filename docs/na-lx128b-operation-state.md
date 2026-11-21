@@ -577,6 +577,35 @@ in diagnostics. Device-offline, timeout, and empty successful
 responses all remain possibilities, distinguishable by sanitized
 HA logs around 20:52–21:02.
 
+### Existing HA warning logs confirm the two-poll bridge
+
+The user subsequently supplied these exact normal-level HA log records
+(Asia/Taipei, 2026-11-21):
+
+```text
+20:55:03.828 WARNING [custom_components.panasonic_iot_tw.services.smart_app] Status fetch for 洗衣機-1 failed (1 in a row), keeping last known state
+20:58:07.992 WARNING [custom_components.panasonic_iot_tw.services.smart_app] Status fetch for 洗衣機-1 failed (2 in a row), keeping last known state
+```
+
+These independently **confirm**, rather than merely suggest, that the
+processed washer status was unavailable at 20:55 and 20:58 but the
+SmartApp fallback intentionally bridged the last successful `status`
+through two failed/unavailable polls. It explains why HA still showed
+generic `運轉中` at 20:58 with `0x01=1,0x50=2`: those values
+were **reused**, not verified fresh at 20:58. The observed
+`status={}`, `available=false` at 21:01 is **consistent with**
+the third failed/unavailable poll exceeding the tolerance, although no
+third warning was supplied.
+
+Importantly, this warning is emitted for a **processed unavailable
+device state**, which can be caused by an exception or by a response
+that contained no usable status values. The log lines **do not by
+themselves prove that a network request failed**, nor establish the
+underlying vendor error. Look for separate per-device
+`deviceOffline`/`deviceNoResponse`/timeout indications in sanitized
+logs. If an offline exception was logged only at debug level, routine
+warning-level logs might not show it.
+
 Do **not** turn `available=false` into an unconditional "off"
 state: loss of connectivity while a programme is actually running
 would create the same symptom. Further design could distinguish
