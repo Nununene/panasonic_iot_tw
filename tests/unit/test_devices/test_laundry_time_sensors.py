@@ -102,6 +102,12 @@ class TestDurationSensorGating:
         _set_status(coordinator, **{"0x15": 3, "0x50": operation_status})
         assert sensors["schedule_remaining_time"].native_value == expected
 
+    def test_combo_dryer_api_sentinel_returns_none(self):
+        """An invalid Panasonic cloud sentinel must not be shown as minutes."""
+        coordinator, sensors = _sensors(WashingMachineDevice, COMBO_WASHER_STATUS)
+        _set_status(coordinator, **{"0x05": "-1683.3", "0x50": 2})
+        assert sensors["drying_remaining_time"].native_value is None
+
     def test_missing_gate_status_returns_none(self):
         coordinator, sensors = _sensors(WashingMachineDevice, WASHER_STATUS)
         _set_status(coordinator, **{"0x13": 47})
