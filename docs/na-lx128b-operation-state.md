@@ -19,6 +19,7 @@ All times below are local Asia/Taipei times on **2026-11-21**.
 | --- | --- | --- | --- | --- | --- |
 | Drying | `1` | `2` | `2` | `6` | Running sample, 12:34 and 12:40; `0x41/0x4F` held 111 and 105 minutes respectively |
 | Spin during wash+dry / 脫水中 | `1` | `2` | `2` | `5` | 14:56:11 numeric same-poll overview, user checked App at 14:59 showing 脫水中 and estimated 16:57 finish; `0x41/0x4F` were empty strings; remote permission `0x74=0` |
+| Drying after spin in same wash+dry cycle / 乾衣中 | `1` | `2` | `2` | `6` | 15:23:47 overview, App at 15:24 said 乾衣中 with finish estimate 16:57 (unchanged since spinning at 14:59); same-poll `0x50` and `0x54` numeric; `0x41/0x4F` empty |
 | Anti-crease holding / 鬆柔保持中 | not recorded | not recorded | `2` | `11` | 13:24:25 after drying completed |
 | Paused / 一時停止中 | not recorded | `7` in next status | `7` | `49601` | 13:30:33, after user pressed pause to take laundry out; `0x41/0x4F` were `0` |
 | Powered off (app showed offline) | `2` | `7` (unchanged after pause) | previous `7` **cached** | previous `49601` **cached** | 13:36:40 new overview GET returned *all empty strings* |
@@ -105,6 +106,21 @@ transitions may still lag until DeviceGetInfo changes. The current HA
 `available` flag can remain true when the official app calls a powered-off
 washer 'offline'; do not equate the two concepts.
 
+## Same-cycle spin → drying transition (2026-11-21)
+
+The user observed the **same wash+dry programme** in the official Smart App
+at 14:59 (spinning) and 15:24 (drying). In the corresponding account overview
+samples, freshly read `0x54` changed from **5 → 6**, with `0x50=2` in
+both. The later sample was read at **15:23:47 Asia/Taipei**. Both 0x50 and
+0x54 carried numeric `Status` strings from the same API GET in each reading.
+This provides within-cycle support for the tentative stage mapping, without
+relying on a lingering cache.
+
+The App continued to predict a **16:57** finish, while `0x41` and `0x4F`
+were `empty_string` in the 15:24 overview read. The alternate App ETA source
+remains unknown. The existing operation-state classifier already maps fresh
+`0x54=6` to `drying`; no additional code change is needed for that phase.
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
@@ -121,6 +137,7 @@ reverse engineering:
 - [ ] Capture `0x01` and both variants of `0x50` **at the moment of pause**
   during washing, not only after drying/anti-crease; confirm pause `7` and
   whether `0x01` changes.
+- [x] Observe `0x54=5` → `0x54=6` during the same wash+dry cycle as the official App changes from spinning (14:59) to drying (15:24) on 2026-11-21.
 - [ ] Repeat `0x54=5` during spin in a wash-only programme as well as
   wash+dry; check if rinse/spin transitions use a different code.
 - [ ] Repeat `0x54=6` in a drying programme, and verify that a *wash-only*
