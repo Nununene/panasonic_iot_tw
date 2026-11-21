@@ -7,6 +7,7 @@ from custom_components.panasonic_iot_tw.laundry_overview import (
     current_expected_finish,
     current_remaining_minutes,
     decode_overview,
+    summarize_overview_response,
 )
 
 START = datetime(2026, 11, 21, 4, 34, tzinfo=timezone.utc)
@@ -179,3 +180,55 @@ def test_invalid_sentinels_and_negative_remaining_minutes_are_ignored():
         START,
     )
     assert current_remaining_minutes(data["laundry"], START) is None
+
+
+
+def test_diagnostic_summary_distinguishes_blank_absent_valid_and_invalid():
+    """Cloud Status fields can be independently blank in the same List."""
+    sample = _payload({
+        "0x41": "", "0x50": "2", "0x54": "6",
+        "0x20": "-1683.3",
+        # 0x4F entirely omitted from List.
+    })
+    result = summarize_overview_response(sample, "washer-gw")
+    assert result == {
+        "result": "matched",
+        "commands": {
+            "0x41": "empty_string",
+            "0x4F": "not_returned",
+            "0x50": "numeric",
+            "0x54": "numeric",
+            "0x20": "invalid_value",
+        },
+    }
+    assert "washer-gw" not in str(result)
+    assert "-1683.3" not in str(result)
+    assert "2" not in str(result)
+
+
+def test_diagnostic_summary_missing_status_field_and_unknown_gateway():
+    sample = {
+        "GwList": [
+            {"GWID": "SECRET_DEVICE_ID", "List": [
+                {"CommandType": "0x41"},
+                {"CommandType": "0x4F", "Status": "75"},
+            ]}
+        ]
+    }
+    summary = summarize_overview_response(sample, "SECRET_DEVICE_ID")
+    assert summary["commands"]["0x41"] == "status_field_missing"
+    assert summary["commands"]["0x4F"] == "numeric"
+    assert "SECRET_DEVICE_ID" not in str(summary)
+    assert summarize_overview_response(
+        sample, "DIFFERENT_ID"
+    )["result"] == "gateway_not_returned"
+
+
+def test_diagnostic_summary_invalid_gateway_payload_safe():
+    assert summarize_overview_response(None, "id")["result"] == "invalid_response"
+    assert summarize_overview_response({"GwList": None}, "id")["result"] == (
+        "invalid_gateway_list"
+    )
+    assert summarize_overview_response({
+        "GwList": [{"GWID": "id", "List": None}]
+    }, "id")["result"] == "invalid_command_list"
