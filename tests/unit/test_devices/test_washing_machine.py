@@ -72,7 +72,7 @@ class TestWashingMachineDevice:
     def test_get_sensor_entities_count(self, washing_machine_device, mock_coordinator):
         """Test that get_sensor_entities returns correct number of sensors."""
         sensors = washing_machine_device.get_sensor_entities(mock_coordinator)
-        assert len(sensors) == 13  # Existing washer sensors + combo drying time and dryer error
+        assert len(sensors) == 19  # Existing washer sensors + ETA and five overview registers
 
     def test_get_sensor_entities_types(self, washing_machine_device, mock_coordinator):
         """Test that sensor entities have correct types and properties."""
@@ -82,8 +82,8 @@ class TestWashingMachineDevice:
 
             sensors = washing_machine_device.get_sensor_entities(mock_coordinator)
 
-            # Should create 13 sensors
-            assert mock_sensor_class.call_count == 13
+            # Should create 19 sensors
+            assert mock_sensor_class.call_count == 19
 
             # Check specific sensor configurations
             calls = mock_sensor_class.call_args_list
@@ -132,13 +132,25 @@ class TestWashingMachineDevice:
             assert kwargs['value_processor'](3) == "more"
             assert kwargs['value_processor'](512) == "none"
 
-            # Combo dryer sensors are appended to preserve the existing sensor order.
-            assert calls[11][1]["command_type"] == "0x05"
+            # Existing unique ID preserved but source is now the validated
+            # account-level overview, not DeviceGetInfo register 0x05.
+            assert calls[11][1]["command_type"] == "0x41"
             assert calls[11][1]["sensor_key"] == "drying_remaining_time"
             assert calls[11][1]["unit"] == UnitOfTime.MINUTES
-            assert calls[11][1]["gate_command"] == "0x50"
+            assert calls[11][1]["data_source"] == "overview_remaining"
+            assert "gate_command" not in calls[11][1]
             assert calls[12][1]["command_type"] == "0x0A"
             assert calls[12][1]["sensor_key"] == "drying_error_code"
+            assert calls[13][1]["sensor_key"] == "drying_expected_finish"
+            assert calls[13][1]["device_class"] == SensorDeviceClass.TIMESTAMP
+            assert calls[13][1]["data_source"] == "overview_eta"
+            assert [call[1]["command_type"] for call in calls[14:19]] == [
+                "0x41", "0x4F", "0x50", "0x54", "0x20"
+            ]
+            assert all(
+                call[1]["entity_category"] == EntityCategory.DIAGNOSTIC
+                for call in calls[14:19]
+            )
 
     def test_get_binary_sensor_entities_count(self, washing_machine_device, mock_coordinator):
         """Test that get_binary_sensor_entities returns correct number of sensors."""
