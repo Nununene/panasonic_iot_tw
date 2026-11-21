@@ -1,5 +1,6 @@
 """Unit tests for washing machine device implementation."""
 import pytest
+from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
@@ -96,11 +97,31 @@ class TestWashingMachineDevice:
         assert state.native_value == "standby"
         assert state.extra_state_attributes["device_get_info_0x01"] == "3"
 
-        # A cloud API still returning old pause (0x50=7) must not hide
-        # a newly observed power-off state 0x01=2.
+        # The exact DeviceGetInfo pair 0x01=2, 0x50=7 occurs in
+        # BOTH paused and powered-off states. Without a recent overview,
+        # return unknown instead of incorrectly declaring it off.
         mock_coordinator.data[0]["status"]["0x01"] = "2"
         mock_coordinator.data[0]["status"]["0x50"] = "7"
+        assert state.native_value is None
+
+        # The power-off observation had an empty *fresh* overview 0x50,
+        # with any old cached value no longer valid as a live indication.
+        now = datetime.now(timezone.utc).isoformat()
+        mock_coordinator.data[0]["overview_last_response_at"] = now
+        mock_coordinator.data[0]["overview_last_response_summary"] = {
+            "result": "matched",
+            "commands": {"0x50": "empty_string"},
+        }
         assert state.native_value == "off"
+
+        # Paused sample instead returned fresh numeric overview 0x50=7.
+        mock_coordinator.data[0]["overview_last_response_summary"] = {
+            "result": "matched",
+            "commands": {"0x50": "numeric"},
+        }
+        mock_coordinator.data[0]["overview_status"] = {"0x50": 7}
+        mock_coordinator.data[0]["overview_observed_at"] = {"0x50": now}
+        assert state.native_value == "paused"
 
 
     def test_get_sensor_entities_types(self, washing_machine_device, mock_coordinator):
