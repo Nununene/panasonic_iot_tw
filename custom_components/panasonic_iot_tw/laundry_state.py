@@ -40,6 +40,13 @@ def _timestamp(value: Any) -> datetime | None:
 
 def _confirmed_phase(device: dict[str, Any], now: datetime) -> int | None:
     """Use 0x54 only when it and overview 0x50 are from this same live read."""
+    # Even a matching overview pair must never be treated as the current phase
+    # if DeviceGetInfo now reports off, standby or paused.
+    status = device.get("status") or {}
+    if _code_int(status.get("0x01")) == 2 or _code_int(
+        status.get("0x50")
+    ) != 2:
+        return None
     summary = device.get("overview_last_response_summary") or {}
     if summary.get("result") != "matched":
         return None
