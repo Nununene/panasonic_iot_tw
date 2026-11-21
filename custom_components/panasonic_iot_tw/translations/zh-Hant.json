@@ -297,6 +297,7 @@
           "off": "關機",
           "standby": "待機中",
           "running": "運轉中",
+          "spinning": "脫水中",
           "drying": "乾衣中",
           "soft_keeping": "鬆柔保持中",
           "paused": "一時停止中"
