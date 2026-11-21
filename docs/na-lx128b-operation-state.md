@@ -375,6 +375,40 @@ future unusual state changes against the app and sensor timestamps.
 `available=true` is the integration's availability flag; it does not
 prove the washer is powered on.
 
+## Wash-only programme: App confirms 0x54=3 = washing (2026-11-21)
+
+At approximately **20:24 Asia/Taipei** the user's family was running
+a **wash-only** cycle (no drying); the official Panasonic App showed
+**洗衣中** and estimated programme completion at **20:53**. The installed
+experimental HA sensor still displayed generic **運轉中**, because it had
+no specific classifier for phase 3.
+
+The latest successful account overview GET at **20:24:24 Asia/Taipei**
+returned `overview 0x50=2` and `0x54=3`, **both fresh numeric**
+with identical observation timestamps. DeviceGetInfo had `0x01=1`,
+`0x50=2`, `0x55=0`, `0x72=8192`, `0x73=1`, and `0x74=0`.
+The most recent cloud time fields `0x41` and `0x4F` were again
+`empty_string`; the absence of an ETA in HA is expected.
+
+This is independent live App corroboration of the **LX128B CommandList
+enum `0x54=3` = 洗衣**, on a *wash-only* programme in addition to the
+earlier wash+dry history where phase 3 was logged at 14:00:57.
+Draft PR #3 now maps fresh, synchronized `0x54=3` to HA
+`washing` / **洗衣中**, with an explicit enum option and translations.
+Missing or stale overview data still falls back to `running`.
+
+**Not yet validated on deployed HA:** the user-observed UI was still
+`running` on the older deployed version. Deploy the updated branch
+after this cycle ends if an end-to-end HA UI confirmation is desired.
+The data also include `0x72=8192`, `0x73=1` during wash-only,
+versus `0x72=512`, `0x73=3` in an earlier wash+dry sequence; treat
+these as correlations only, not a safe programme discriminator.
+
+The same command metadata declares `0x54=4` as **洗清**.
+Its transition appeared in the previous wash+dry HA CSV, but a
+contemporaneous official App comparison in this wash-only cycle is
+still needed before adding the new translated HA `rinsing` enum.
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
@@ -400,10 +434,11 @@ reverse engineering:
   (which would cause an experimental false `off` label); do not treat
   this single successful transition as proof the heuristic is infallible.
 - [x] Observe `0x54=5` → `0x54=6` during the same wash+dry cycle as the official App changes from spinning (14:59) to drying (15:24) on 2026-11-21.
-- [ ] During a later normal wash+dry session, compare official App
-  wording to metadata `0x54=3` (洗衣) and `0x54=4` (洗清).
-  Cloud metadata now supplies their meanings, but the CSV alone did not
-  establish the App labels at those exact timestamps.
+- [x] Confirm `0x54=3` (洗衣) against the official App in a wash-only
+  programme at 20:24:24 on 2026-11-21; newer HA enum support added, UI test pending.
+- [ ] Compare official App wording with `0x54=4` (metadata: 洗清)
+  during a normal wash-only or wash+dry programme before adding a translated
+  HA `rinsing` enum.
 - [ ] Check `0x41` (metadata: 洗衣殘時間) against App completion
   time across future cycles. Investigate `0x4F` (metadata: nanoe殘時間)
   separately, without treating it as current-stage or total ETA.
