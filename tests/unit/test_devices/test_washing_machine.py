@@ -87,7 +87,7 @@ class TestWashingMachineDevice:
         assert len(sensors) == 20
         state = next(
             sensor for sensor in sensors
-            if sensor._sensor_key == "laundry_operation_state"
+            if sensor._attr_unique_id.endswith("_laundry_operation_state")
         )
         assert state.device_class == SensorDeviceClass.ENUM
         assert state._attr_unique_id == (
