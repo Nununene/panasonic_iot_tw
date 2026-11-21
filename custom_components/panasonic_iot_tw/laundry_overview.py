@@ -180,11 +180,22 @@ def attach_laundry_overview(
             device["overview_eta_command"] = None
             continue
 
-        # Prefer new 0x41; use 0x4F when 0x41 is temporarily absent.
-        candidate_code = next((
-            code for code in ("0x41", "0x4F")
-            if code in incoming and 0 <= incoming[code] <= MAX_REMAINING_MINUTES
-        ), None)
+        # 0x41 matches the whole-programme ETA even during spinning.
+        # 0x4F may instead describe *current phase* minutes: in a
+        # wash+dry cycle 0x41=116 and 0x4F=11 during spinning, and
+        # 0x54 changed from 5 (spin) to 6 (dry) ~12 minutes later.
+        # Only fall back to 0x4F during a fresh, confirmed drying phase,
+        # where previous independent observations saw 0x41 == 0x4F.
+        candidate_code = None
+        if "0x41" in incoming and 0 <= incoming["0x41"] <= MAX_REMAINING_MINUTES:
+            candidate_code = "0x41"
+        elif (
+            incoming.get("0x50") == 2
+            and incoming.get("0x54") == 6
+            and "0x4F" in incoming
+            and 0 <= incoming["0x4F"] <= MAX_REMAINING_MINUTES
+        ):
+            candidate_code = "0x4F"
         if candidate_code is not None and values.get("0x50") == 2:
             minutes = incoming[candidate_code]
             device["overview_expected_finish_at"] = (
