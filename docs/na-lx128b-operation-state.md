@@ -275,9 +275,11 @@ manufacturer's official register semantics remain undocumented.
 The unchanged `0x50=2` is particularly important: it should mean a
 broad running/active state rather than be treated as proof of *ongoing*
 drying. The draft classifier already maps synchronized `0x54=11`
-to `soft_keeping`. **No new code change is required.** The user has
-not yet reported whether HA itself displayed 鬆柔保持中 at this
-particular transition; that end-to-end UI verification remains open.
+to `soft_keeping`. **No new code change is required.** The user subsequently confirmed that the deployed **HA experimental
+sensor also displayed 鬆柔保持中**, matching both the official App and
+the fresh synchronized cloud readings (`0x50=2`, `0x54=11`).
+This completes the end-to-end validation for the anti-crease holding state
+on this NA-LX128B. **No new code change is required.**
 
 Note that the last earlier sample was 16:19:01; no intermediate stage
 was **observed**, which does not rule out a brief transient stage
@@ -316,9 +318,9 @@ reverse engineering:
 - [ ] Determine whether short cooling/airflow phases exist between `0x54=6`
   and `0x54=11`, or whether `0x54=11` also appears elsewhere. The three-minute
   observation gap cannot rule out brief transitions.
-- [ ] Verify the **HA experimental sensor actually shows 鬆柔保持中**
-  when the App does; the API classification is confirmed, but this run's
-  HA display has not yet been reported.
+- [x] Verify the **HA experimental sensor shows 鬆柔保持中**
+  while the App does; the user confirmed this for the 16:22 transition
+  from `0x54=6` to `0x54=11`.
 - [ ] Verify `0x01=2` after power-off from a running or standby state,
   not only after a pause; verify `0x01=3` on a second power-on.
 - [ ] Observe the meaning of DeviceGetInfo `0x50=3,4,5,8` for
