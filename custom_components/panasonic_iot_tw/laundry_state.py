@@ -101,6 +101,8 @@ def laundry_operation_state(
         return "soft_keeping"
     if phase == 6:
         return "drying"
+    if phase == 5:
+        return "spinning"
     return "running"
 
 
