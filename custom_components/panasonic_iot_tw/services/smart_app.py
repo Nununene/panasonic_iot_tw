@@ -10,6 +10,7 @@ from .device_service import DeviceService
 from .data_processor import DataProcessor
 from .report_service import ReportService
 from ..base.value_processors import mask_value
+from ..api_constants import API_ENDPOINTS
 from ..const import TRANSIENT_FAILURE_TOLERANCE
 from ..exceptions import (
     PanasonicExceedRateLimit,
@@ -187,6 +188,24 @@ class SmartApp:
             _LOGGER.error("Unexpected error during login: %s", e)
             raise
     
+    async def get_laundry_overview(self) -> Dict[str, Any]:
+        """Fetch the read-only account-level status overview for Type 3 devices.
+
+        Callers gate the additional request to laundries and throttle it.
+        The cloud sometimes returns empty Status strings; keep the raw
+        response here and let the coordinator handle freshness.
+        """
+        await self._token_manager.ensure_authenticated()
+        return await self._api_client.request(
+            method="GET",
+            endpoint=API_ENDPOINTS["get_device_overview"],
+            headers={
+                **self._token_manager.get_auth_headers(),
+                "apptype": "Smart",
+            },
+            log=False,
+        )
+
     async def get_devices(self) -> List[Dict[str, Any]]:
         """
         Get device list
