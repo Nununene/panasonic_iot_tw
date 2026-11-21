@@ -47,6 +47,7 @@ def _set_status(coordinator, **status):
 
 
 WASHER_STATUS = {"0x13": 47, "0x15": 3, "0x50": 2, "0x55": 1}
+COMBO_WASHER_STATUS = {**WASHER_STATUS, "0x05": 47}
 DRYER_STATUS = {"0x05": 47, "0x15": 3, "0x50": 2, "0x55": 1}
 
 
@@ -57,6 +58,7 @@ class TestDurationSensorGating:
         "device_cls,status,remaining_key,remaining_cmd",
         [
             (WashingMachineDevice, WASHER_STATUS, "washing_remaining_time", "0x13"),
+            (WashingMachineDevice, COMBO_WASHER_STATUS, "drying_remaining_time", "0x05"),
             (DryerDevice, DRYER_STATUS, "drying_remaining_time", "0x05"),
         ],
     )
@@ -69,6 +71,7 @@ class TestDurationSensorGating:
         "device_cls,status,remaining_key,remaining_cmd",
         [
             (WashingMachineDevice, WASHER_STATUS, "washing_remaining_time", "0x13"),
+            (WashingMachineDevice, COMBO_WASHER_STATUS, "drying_remaining_time", "0x05"),
             (DryerDevice, DRYER_STATUS, "drying_remaining_time", "0x05"),
         ],
     )
@@ -137,6 +140,13 @@ class TestErrorCodeSensor:
         """0x19 reads 0 on the dryer even during a fault, so it must not be used."""
         coordinator, sensors = _sensors(DryerDevice, DRYER_STATUS)
         _set_status(coordinator, **{"0x19": 21772, "0x0A": 0, "0x50": 8})
+        assert sensors["error_code"].native_value is None
+
+    def test_combo_dryer_error_register_is_exposed_separately(self):
+        """Type 3 combo models use 0x0A without replacing the washer's 0x19."""
+        coordinator, sensors = _sensors(WashingMachineDevice, COMBO_WASHER_STATUS)
+        _set_status(coordinator, **{"0x0A": 21772, "0x19": 0, "0x50": 8})
+        assert sensors["drying_error_code"].native_value == "U12"
         assert sensors["error_code"].native_value is None
 
     def test_raw_value_kept_as_attribute(self):
