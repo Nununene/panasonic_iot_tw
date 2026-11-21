@@ -137,6 +137,13 @@ class PanasonicCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                         type(exc).__name__,
                     )
             attach_laundry_overview(data, self.data, overview_payload, now)
+            last_request = (
+                self._last_overview_attempt.isoformat()
+                if self._last_overview_attempt else None
+            )
+            for device in data.values():
+                if device.get("device_type") == 3:
+                    device["overview_last_request_at"] = last_request
 
         self._consecutive_failures = 0
         self._auth_failure_count = 0
