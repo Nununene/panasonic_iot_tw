@@ -14,6 +14,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .base import PanasonicEntity, PlatformSetupHelper
 from .laundry_overview import current_expected_finish, current_remaining_minutes
+from .laundry_state import laundry_operation_state, laundry_state_attributes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -111,6 +112,10 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
                 return current_expected_finish(
                     self._current_device, datetime.now(timezone.utc)
                 )
+            if self._data_source == "laundry_operation_state":
+                return laundry_operation_state(
+                    self._current_device, datetime.now(timezone.utc)
+                )
 
             # Handle special data sources (energy, CO2, door)
             if self._data_source in ["energy", "co2", "door"]:
@@ -184,6 +189,10 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
         """Return additional state attributes."""
+        if self._data_source == "laundry_operation_state":
+            return laundry_state_attributes(
+                self._current_device, datetime.now(timezone.utc)
+            )
         if self._data_source in ("overview", "overview_remaining", "overview_eta"):
             device = self._current_device
             if self._data_source == "overview":
