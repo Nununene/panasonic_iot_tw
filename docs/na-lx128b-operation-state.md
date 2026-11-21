@@ -22,10 +22,9 @@ All times below are local Asia/Taipei times on **2026-11-21**.
 | Paused / 一時停止中 | not recorded | `7` in next status | `7` | `49601` | 13:30:33, after user pressed pause to take laundry out; `0x41/0x4F` were `0` |
 | Powered off (app showed offline) | `2` | `7` (unchanged after pause) | previous `7` **cached** | previous `49601` **cached** | 13:36:40 new overview GET returned *all empty strings* |
 | On, standby / 待機中 | `3` | `1` | `1` **fresh** | previous `49601` **cached** | 13:39:45; overview `0x54` was empty again |
-
 | On, standby with remote control permission | `3` | `1` | `1` **fresh** | no valid value | 13:48:57; DeviceGetInfo `0x74` changed from `0` in ordinary standby to `1` after closing the door and enabling remote control; official App recognized permission |
 
-The apparent discrepancy in the final two rows is **intentional**.
+The apparent discrepancy in the powered-off and first-standby rows is **intentional**.
 `overview_status` holds per-code numeric values for up to 15 minutes; check
 `overview_observed_at` plus `overview_last_response_summary` rather than
 trusting its presence as a fresh reading.
