@@ -18,6 +18,7 @@ All times below are local Asia/Taipei times on **2026-11-21**.
 | App state | DeviceGetInfo `0x01` | DeviceGetInfo `0x50` | Overview `0x50` | Overview `0x54` | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | Drying | `1` | `2` | `2` | `6` | Running sample, 12:34 and 12:40; `0x41/0x4F` held 111 and 105 minutes respectively |
+| Spin during wash+dry / 脫水中 | `1` | `2` | `2` | `5` | 14:56:11 numeric same-poll overview, user checked App at 14:59 showing 脫水中 and estimated 16:57 finish; `0x41/0x4F` were empty strings; remote permission `0x74=0` |
 | Anti-crease holding / 鬆柔保持中 | not recorded | not recorded | `2` | `11` | 13:24:25 after drying completed |
 | Paused / 一時停止中 | not recorded | `7` in next status | `7` | `49601` | 13:30:33, after user pressed pause to take laundry out; `0x41/0x4F` were `0` |
 | Powered off (app showed offline) | `2` | `7` (unchanged after pause) | previous `7` **cached** | previous `49601` **cached** | 13:36:40 new overview GET returned *all empty strings* |
@@ -86,6 +87,7 @@ All model checks use exactly `NA-LX128B`.
 4. Otherwise DeviceGetInfo `0x50=2` → `running`, with conditional
    subdivision only if **both** account-level overview codes `0x50=2`
    and `0x54` were numeric on the **same latest successful response**:
+   - `0x54=5` → `spinning` (one matching wash+dry sample)
    - `0x54=6` → `drying`
    - `0x54=11` → `soft_keeping`
 5. Any unrecognized/missing DeviceGetInfo operation code → unknown
@@ -119,6 +121,8 @@ reverse engineering:
 - [ ] Capture `0x01` and both variants of `0x50` **at the moment of pause**
   during washing, not only after drying/anti-crease; confirm pause `7` and
   whether `0x01` changes.
+- [ ] Repeat `0x54=5` during spin in a wash-only programme as well as
+  wash+dry; check if rinse/spin transitions use a different code.
 - [ ] Repeat `0x54=6` in a drying programme, and verify that a *wash-only*
   programme never uses it for an unrelated phase.
 - [ ] Repeat `0x54=11` in anti-crease holding, ideally with `0x01`
