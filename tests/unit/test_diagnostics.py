@@ -150,11 +150,15 @@ async def test_laundry_overview_probe_is_read_only_and_redacted():
     dumped = str(result)
     for secret in ("SENSITIVE_TOKEN", "PRIVATE_GATEWAY", "PRIVATE_AUTH", "Private owner", "secret private message"):
         assert secret not in dumped
-    app._api_client.request.assert_awaited_once()
-    kwargs = app._api_client.request.await_args.kwargs
+    assert app._api_client.request.await_count == 2
+    kwargs = app._api_client.request.await_args_list[0].kwargs
     assert kwargs["method"] == "GET"
     assert kwargs["endpoint"].endswith("/UserGetDeviceStatus")
     assert kwargs["log"] is False
+    second = app._api_client.request.await_args_list[1].kwargs
+    assert second["method"] == "GET"
+    assert second["endpoint"].endswith("/UserGetRegisteredGwList2")
+    assert second["log"] is False
 
 
 async def test_laundry_overview_probe_suppresses_error_text():
@@ -256,3 +260,65 @@ async def test_overview_status_text_relaxed_without_private_data():
     assert "user@example.com" not in str(result)
     assert "PRIVATE_TOKEN" not in str(result)
     assert "MY_PRIVATE_GWID" not in str(result)
+
+
+
+async def test_laundry_command_list_probe_parses_metadata_and_redacts_identifiers():
+    """Parse JSON and direct List command metadata for only matching laundries."""
+    entry = _entry_with_coordinator()
+    coordinator = entry.runtime_data
+    coordinator.data["device_auth_1"]["device_type"] = 3
+    app = coordinator.smart_app
+    app._token_manager.ensure_authenticated = AsyncMock()
+    app._token_manager.get_auth_headers.return_value = {
+        "cptoken": "MY_SECRET_TOKEN"
+    }
+    response = {
+        "GwList": [
+            {"GWID": "REAL_PRIVATE_GWID", "Auth": "REAL_AUTH", "DeviceType": "3", "ModelType": "LaundryType"},
+            {"GWID": "OTHER_GWID", "DeviceType": "1", "ModelType": "AC"},
+        ],
+        "CommandList": [
+            {"DeviceType": "1", "ModelType": "AC",
+             "List": [{"CommandType": "0x99"}]},
+            {"DeviceType": "3", "ModelType": "LaundryType", "JSON":
+                '{"List": [{"CommandType": "0x05", "Private": "secret"}, {"CommandType": "0x13"}]}'},
+            {"DeviceType": "3", "ModelType": "WrongType",
+             "List": [{"CommandType": "0x88"}]},
+            {"DeviceType": "3", "ModelType": "LaundryType",
+             "List": [{"CommandType": "0x34"}, {"CommandType": "secret:token"}]},
+        ],
+    }
+    app._api_client.request = AsyncMock(side_effect=[
+        {"GwList": []}, response,
+    ])
+
+    result = await async_get_config_entry_diagnostics(Mock(), entry)
+    data = result["command_list_probe"]
+    assert data["result"] == "ok"
+    assert data["laundry_device_count"] == 1
+    assert data["command_list_entry_count"] == 4
+    assert data["matched_entry_count"] == 2
+    assert data["matching_entries"][0]["command_codes"] == ["0x05", "0x13"]
+    assert data["matching_entries"][1]["command_codes"] == ["0x34"]
+    assert "Private" in data["matching_entries"][0]["command_item_keys"]
+    dumped = str(result)
+    for secret in ("REAL_PRIVATE_GWID", "REAL_AUTH", "MY_SECRET_TOKEN", "WrongType", "secret:token"):
+        assert secret not in dumped
+
+
+async def test_command_list_probe_failure_does_not_break_diagnostics():
+    entry = _entry_with_coordinator()
+    coordinator = entry.runtime_data
+    coordinator.data["device_auth_1"]["device_type"] = 3
+    app = coordinator.smart_app
+    app._token_manager.ensure_authenticated = AsyncMock()
+    app._token_manager.get_auth_headers.return_value = {"cptoken": "private"}
+    app._api_client.request = AsyncMock(side_effect=[
+        {"GwList": []}, RuntimeError("private auth leaked"),
+    ])
+    result = await async_get_config_entry_diagnostics(Mock(), entry)
+    assert result["command_list_probe"] == {
+        "result": "error", "error_type": "RuntimeError",
+    }
+    assert "private auth leaked" not in str(result)
