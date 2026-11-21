@@ -1,5 +1,6 @@
 """Sensor platform for Panasonic IoT TW integration."""
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional, Callable
 
 from homeassistant.components.sensor import (
@@ -12,6 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .base import PanasonicEntity, PlatformSetupHelper
+from .laundry_overview import current_expected_finish, current_remaining_minutes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,6 +97,21 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
     def _get_raw_value(self, command_type: str = None) -> Any:
         """Get raw value from data source (override to support special data sources)."""
         try:
+            # The account overview is separate from DeviceGetInfo status.
+            # Each CommandType can independently return an empty string.
+            if self._data_source == "overview":
+                return self._current_device.get("overview_status", {}).get(
+                    command_type or self._command_type
+                )
+            if self._data_source == "overview_remaining":
+                return current_remaining_minutes(
+                    self._current_device, datetime.now(timezone.utc)
+                )
+            if self._data_source == "overview_eta":
+                return current_expected_finish(
+                    self._current_device, datetime.now(timezone.utc)
+                )
+
             # Handle special data sources (energy, CO2, door)
             if self._data_source in ["energy", "co2", "door"]:
                 return self._get_special_data_value()
@@ -167,6 +184,22 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
         """Return additional state attributes."""
+        if self._data_source in ("overview", "overview_remaining", "overview_eta"):
+            device = self._current_device
+            if self._data_source == "overview":
+                observed = device.get("overview_observed_at", {})
+                return {
+                    "source": "UserGetDeviceStatus",
+                    "command_type": self._command_type,
+                    "last_observed_at": observed.get(self._command_type),
+                    "last_request_at": device.get("overview_last_request_at"),
+                }
+            return {
+                "source": "UserGetDeviceStatus",
+                "source_command": device.get("overview_eta_command"),
+                "last_observed_at": device.get("overview_eta_observed_at"),
+                "last_request_at": device.get("overview_last_request_at"),
+            }
         if self._extra_state_processor and self._is_gate_open():
             raw_value = self._get_raw_value()
             return self._get_processed_value(raw_value, self._extra_state_processor)
