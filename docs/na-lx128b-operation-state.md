@@ -34,6 +34,19 @@ trusting its presence as a fresh reading.
 `0x50=7` was observed during pause, but DeviceGetInfo continued reporting it
 after power-off. Consequently the **power code takes precedence**.
 
+## First Home Assistant on-device check (2026-11-21 13:54:46 Asia/Taipei)
+
+User deployed the experimental sensor and confirmed that Home Assistant displayed
+**「洗衣機運轉狀態（實驗性）: 待機中」** while the official app/device was in
+standby. Contemporaneous diagnostics: DeviceGetInfo `0x01=3`,
+`0x50=1`, and `0x74=1` (remote-control permission remains enabled).
+The latest overview `0x50=1` was numeric; `0x41`, `0x4F`,
+`0x54`, and `0x20` were all empty strings. This validates the **standby
+display path on the actual NA-LX128B** and confirms that the presence of
+remote-control permission does not override standby in this implementation.
+It does **not** yet validate live transitions into drying, anti-crease,
+pause, or power-off with this new HA entity.
+
 ## Remote control permission is separate from operation state
 
 Live observation at **13:48:57**: user closed the washer door and pressed the
