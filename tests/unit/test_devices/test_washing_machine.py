@@ -74,6 +74,35 @@ class TestWashingMachineDevice:
         sensors = washing_machine_device.get_sensor_entities(mock_coordinator)
         assert len(sensors) == 19  # Existing washer sensors + ETA and five overview registers
 
+    def test_na_lx128b_has_extra_experimental_operation_state(
+        self, mock_coordinator, mock_device_data
+    ):
+        """Only the tested combo model gets the additional enum entity."""
+        mock_device_data["model"] = "NA-LX128B"
+        mock_coordinator.data[0]["model"] = "NA-LX128B"
+        mock_coordinator.data[0]["status"]["0x01"] = "3"
+        mock_coordinator.data[0]["status"]["0x50"] = "1"
+        device = WashingMachineDevice(mock_coordinator, 0, mock_device_data)
+        sensors = device.get_sensor_entities(mock_coordinator)
+        assert len(sensors) == 20
+        state = next(
+            sensor for sensor in sensors
+            if sensor._sensor_key == "laundry_operation_state"
+        )
+        assert state.device_class == SensorDeviceClass.ENUM
+        assert state._attr_unique_id == (
+            "washing_machine_test_001_laundry_operation_state"
+        )
+        assert state.native_value == "standby"
+        assert state.extra_state_attributes["device_get_info_0x01"] == "3"
+
+        # A cloud API still returning old pause (0x50=7) must not hide
+        # a newly observed power-off state 0x01=2.
+        mock_coordinator.data[0]["status"]["0x01"] = "2"
+        mock_coordinator.data[0]["status"]["0x50"] = "7"
+        assert state.native_value == "off"
+
+
     def test_get_sensor_entities_types(self, washing_machine_device, mock_coordinator):
         """Test that sensor entities have correct types and properties."""
         with patch('custom_components.panasonic_iot_tw.sensor.PanasonicSensor') as mock_sensor_class:
