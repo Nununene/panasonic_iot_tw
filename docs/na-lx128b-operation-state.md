@@ -433,6 +433,34 @@ the household's actual cycle and the user was advised not to restart HA
 until it finishes. Do not infer the physical transition's precise
 start time from these snapshots.
 
+## Wash-only cycle: App confirms 0x54=5 spinning (2026-11-21)
+
+During the **same wash-only / no-drying** programme, the official
+Panasonic App showed **脫水中**. The successful account overview
+GET at **20:45:52 Asia/Taipei** returned **new numeric**
+`0x50=2` and **`0x54=5`**, both observed at the identical
+timestamp (2026-11-21T12:45:52.286225+00:00).
+DeviceGetInfo reported `0x01=1`, `0x50=2`, `0x55=0`,
+`0x72=8192`, `0x73=1`, `0x74=0`, and the same
+sentinel values as during washing/rinsing. The latest account
+overview `0x41`, `0x4F`, and `0x20` were empty;
+HA's overview-derived ETA remained null.
+
+This gives a **three-stage same-cycle wash-only observation**:
+`0x54=3` 洗衣 at **20:24:24** →
+`0x54=4` 洗清 at **20:30:32** →
+`0x54=5` 脫水 at **20:45:52**. Each is corroborated by
+the official App and the model's CommandList.
+This independently confirms that code `5` means **spinning**
+in both wash-only and wash+dry programmes. These are API
+observation times, not exact mechanical phase-transition instants.
+
+The Draft PR classifier **already supports** fresh synchronized
+`0x54=5` → `spinning`, so **no code change is required**.
+Whether the deployed HA experimental sensor actually displayed
+**脫水中** in this run has not yet been reported; keep this
+end-to-end check open.
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
@@ -468,8 +496,12 @@ reverse engineering:
   separately, without treating it as current-stage or total ETA.
 - [ ] Observe the official App if `0x54=9` (metadata: 冷卻) ever appears,
   and whether it occurs between `0x54=6` and `0x54=11`.
-- [ ] Repeat `0x54=5` during spin in a wash-only programme as well as
-  wash+dry; check if rinse/spin transitions use a different code.
+- [x] Confirm `0x54=5` during **wash-only** spin after
+  `0x54=4` rinse at 20:45:52 on 2026-11-21; App and cloud match.
+  Code `5` had also been confirmed during wash+dry spin.
+- [ ] Check whether deployed HA experimental sensor shows 脫水中
+  in a live wash-only spinning phase. The API and code support it,
+  but this run's HA display has not yet been reported.
 - [ ] Repeat `0x54=6` in a drying programme, and verify that a *wash-only*
   programme never uses it for an unrelated phase.
 - [x] Repeat `0x54=11` in anti-crease holding with DeviceGetInfo `0x01=1` (16:22:05, second wash+dry cycle on 2026-11-21).
