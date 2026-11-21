@@ -138,6 +138,12 @@ class TestWashingMachineDevice:
         assert "washing" in state.options
         assert state.native_value == "washing"
 
+        # In the same wash-only cycle the official App then reported
+        # 洗清中, corroborating fresh overview 0x54=4.
+        mock_coordinator.data[0]["overview_status"]["0x54"] = 4
+        assert "rinsing" in state.options
+        assert state.native_value == "rinsing"
+
 
     def test_get_sensor_entities_types(self, washing_machine_device, mock_coordinator):
         """Test that sensor entities have correct types and properties."""
