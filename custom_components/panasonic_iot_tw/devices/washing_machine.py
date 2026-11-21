@@ -234,15 +234,12 @@ class WashingMachineDevice(BaseDevice):
             # dryer entities so the existing washer entities remain unchanged.
             self._create_sensor(
                 coordinator,
-                command_type=self.DRYING_REMAINING_TIME_COMMAND,
+                command_type="0x41",
                 name="乾衣殘時間",
                 sensor_key="drying_remaining_time",
                 device_class=SensorDeviceClass.DURATION,
                 unit=UnitOfTime.MINUTES,
-                value_processor=value_processors.safe_int,
-                extra_state_processor=value_processors.create_time_formatter("minutes"),
-                gate_command=self.OPERATION_STATUS_COMMAND,
-                gate_allowed=self.REMAINING_TIME_STATUSES,
+                data_source="overview_remaining",
                 translation_key="washing_machine_drying_remaining_time"
             ),
             self._create_sensor(
@@ -254,6 +251,67 @@ class WashingMachineDevice(BaseDevice):
                 extra_state_processor=value_processors.process_error_code_attributes,
                 entity_category=EntityCategory.DIAGNOSTIC,
                 translation_key="washing_machine_drying_error_code"
+            ),
+            # Estimated finish is a real HA timestamp (not a local-time
+            # formatted string); observed during NA-LX128B drying.
+            self._create_sensor(
+                coordinator,
+                command_type="0x41",
+                name="乾衣預計完成時間",
+                sensor_key="drying_expected_finish",
+                device_class=SensorDeviceClass.TIMESTAMP,
+                data_source="overview_eta",
+                translation_key="washing_machine_drying_expected_finish",
+            ),
+            self._create_sensor(
+                coordinator,
+                command_type="0x41",
+                name="雲端原始狀態 0x41",
+                sensor_key="overview_41",
+                data_source="overview",
+                value_processor=value_processors.safe_int,
+                entity_category=EntityCategory.DIAGNOSTIC,
+                translation_key="washing_machine_overview_41",
+            ),
+            self._create_sensor(
+                coordinator,
+                command_type="0x4F",
+                name="雲端原始狀態 0x4F",
+                sensor_key="overview_4f",
+                data_source="overview",
+                value_processor=value_processors.safe_int,
+                entity_category=EntityCategory.DIAGNOSTIC,
+                translation_key="washing_machine_overview_4f",
+            ),
+            self._create_sensor(
+                coordinator,
+                command_type="0x50",
+                name="雲端原始狀態 0x50",
+                sensor_key="overview_50",
+                data_source="overview",
+                value_processor=value_processors.safe_int,
+                entity_category=EntityCategory.DIAGNOSTIC,
+                translation_key="washing_machine_overview_50",
+            ),
+            self._create_sensor(
+                coordinator,
+                command_type="0x54",
+                name="雲端原始狀態 0x54",
+                sensor_key="overview_54",
+                data_source="overview",
+                value_processor=value_processors.safe_int,
+                entity_category=EntityCategory.DIAGNOSTIC,
+                translation_key="washing_machine_overview_54",
+            ),
+            self._create_sensor(
+                coordinator,
+                command_type="0x20",
+                name="雲端原始狀態 0x20",
+                sensor_key="overview_20",
+                data_source="overview",
+                value_processor=value_processors.safe_int,
+                entity_category=EntityCategory.DIAGNOSTIC,
+                translation_key="washing_machine_overview_20",
             ),
         ]
     

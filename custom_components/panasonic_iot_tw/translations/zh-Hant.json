@@ -287,6 +287,24 @@
       },
       "washing_machine_drying_error_code": {
         "name": "乾衣錯誤代碼"
+      },
+      "washing_machine_drying_expected_finish": {
+        "name": "乾衣預計完成時間"
+      },
+      "washing_machine_overview_41": {
+        "name": "雲端原始狀態 0x41"
+      },
+      "washing_machine_overview_4f": {
+        "name": "雲端原始狀態 0x4F"
+      },
+      "washing_machine_overview_50": {
+        "name": "雲端原始狀態 0x50"
+      },
+      "washing_machine_overview_54": {
+        "name": "雲端原始狀態 0x54"
+      },
+      "washing_machine_overview_20": {
+        "name": "雲端原始狀態 0x20"
       }
     },
     "binary_sensor": {

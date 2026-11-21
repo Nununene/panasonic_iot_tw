@@ -287,6 +287,24 @@
       },
       "washing_machine_drying_error_code": {
         "name": "Dryer Error Code"
+      },
+      "washing_machine_drying_expected_finish": {
+        "name": "Drying Expected Finish"
+      },
+      "washing_machine_overview_41": {
+        "name": "Cloud Raw Status 0x41"
+      },
+      "washing_machine_overview_4f": {
+        "name": "Cloud Raw Status 0x4F"
+      },
+      "washing_machine_overview_50": {
+        "name": "Cloud Raw Status 0x50"
+      },
+      "washing_machine_overview_54": {
+        "name": "Cloud Raw Status 0x54"
+      },
+      "washing_machine_overview_20": {
+        "name": "Cloud Raw Status 0x20"
       }
     },
     "binary_sensor": {
