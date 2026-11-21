@@ -160,7 +160,8 @@ def test_stopped_appliance_clears_eta_even_if_minutes_old_values_remain():
     assert current_remaining_minutes(data["laundry"], now) is None
 
 
-def test_4f_fallback_only_when_fresh_drying_phase_is_confirmed():
+def test_4f_nanoe_time_is_never_a_whole_programme_eta_even_during_drying():
+    # Cloud model metadata: 0x4F = nanoe殘時間, not total or phase ETA.
     data = attach_laundry_overview(
         _device_data(), None,
         _payload({
@@ -168,14 +169,42 @@ def test_4f_fallback_only_when_fresh_drying_phase_is_confirmed():
         }),
         START,
     )
-    assert data["laundry"]["overview_eta_command"] == "0x4F"
-    assert current_remaining_minutes(data["laundry"], START) == 85
+    assert data["laundry"]["overview_status"]["0x4F"] == 85
+    assert data["laundry"]["overview_eta_command"] is None
+    assert current_expected_finish(data["laundry"], START) is None
+
+
+def test_old_nanoe_derived_eta_cannot_survive_new_observation():
+    prior = attach_laundry_overview(
+        _device_data(), None,
+        _payload({"0x41": "120", "0x50": "2", "0x54": "6"}),
+        START,
+    )
+    old = prior["laundry"]
+    old["overview_eta_command"] = "0x4F"
+    next_minute = START + timedelta(minutes=1)
+    next_data = attach_laundry_overview(
+        _device_data(), prior,
+        _payload({"0x41": "", "0x4F": "60", "0x50": "2", "0x54": "6"}),
+        next_minute,
+    )
+    assert current_expected_finish(next_data["laundry"], next_minute) is None
+    assert next_data["laundry"]["overview_eta_command"] is None
+
+
+def test_0x41_schema_allows_up_to_1440_minutes():
+    data = attach_laundry_overview(
+        _device_data(), None,
+        _payload({"0x41": "750", "0x4F": "11", "0x50": "2"}),
+        START,
+    )
+    assert current_remaining_minutes(data["laundry"], START) == 750
+    assert data["laundry"]["overview_eta_command"] == "0x41"
 
 
 def test_spin_phase_4f_does_not_override_missing_full_cycle_41():
-    # Actual 2026-11-21 cycle: 15:02 spin had 0x41=116, 0x4F=11.
-    # If the 0x41 sample were blank, the old fallback would show a
-    # fabricated 15:13 programme finish instead of the App's ~16:57.
+    # Actual cycle: 15:02 spin had 0x41=116, 0x4F=11.
+    # CommandList now confirms that 0x4F is nanoe time, not spin time.
     data = attach_laundry_overview(
         _device_data(), None,
         _payload({
