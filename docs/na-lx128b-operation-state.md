@@ -158,6 +158,23 @@ App necessarily uses another endpoint: other fields, separate requests,
 server state, or local calculations remain possible. Do not synthesize a HA
 ETA from the App's display without a reliable machine-readable source.
 
+## Continued drying sample near estimated finish (2026-11-21 16:07)
+
+At **16:07 Asia/Taipei** the official Panasonic App still showed
+**乾衣中**, with expected finish **16:21** unchanged from 15:56. At
+**16:06:46** the latest successful `UserGetDeviceStatus` reported both
+`overview 0x50=2` and `overview 0x54=6` as numeric values from that
+same response. `0x41`, `0x4F`, and `0x20` again returned empty
+strings. DeviceGetInfo simultaneously showed `0x01=1`, `0x50=2`
+and `0x74=0`.
+
+This extends observed persistence of `0x54=6` during drying across
+samples at **15:23:47 → 15:54:27 → 16:06:46** (about 43 minutes between
+the first and latest). No distinct cooldown/airflow code has been
+observed *yet*, but there may be shorter transitions between samples.
+The App was forecasting roughly **14 minutes** until finish; this
+cannot be inferred from `0x41/0x4F` in the received overview.
+
 ## Unresolved observations and suggested future tests
 
 Tests to do during **normal usage**, not by interrupting a cycle solely for
