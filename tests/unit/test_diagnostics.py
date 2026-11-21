@@ -1,6 +1,6 @@
 """Unit tests for the Panasonic IoT TW diagnostics."""
 from datetime import timedelta
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -111,3 +111,63 @@ async def test_diagnostics_redacts_credentials():
     assert result["entry"]["data"]["username"] == REDACTED
     assert result["client"]["account"] == REDACTED
     assert result["client"]["cache_stats"]["device_ids"] == REDACTED
+
+
+async def test_laundry_overview_probe_is_read_only_and_redacted():
+    """An explicit diagnostics download can compare the alternate endpoint."""
+    entry = _entry_with_coordinator()
+    coordinator = entry.runtime_data
+    coordinator.data["device_auth_1"]["device_type"] = 3
+    app = coordinator.smart_app
+    app._token_manager.ensure_authenticated = AsyncMock()
+    app._token_manager.get_auth_headers.return_value = {"cptoken": "SENSITIVE_TOKEN"}
+    app._api_client.request = AsyncMock(return_value={
+        "status": "success",
+        "devices": [{
+            "GWID": "PRIVATE_GATEWAY",
+            "Auth": "PRIVATE_AUTH",
+            "NickName": "Private owner",
+            "DeviceID": "12345678",
+            "RemainingTime": "62",
+            "EstimatedFinish": "12:11",
+            "Status": "drying",
+            "description": "secret private message",
+        }],
+    })
+
+    result = await async_get_config_entry_diagnostics(Mock(), entry)
+
+    assert result["overview_probe"]["result"] == "ok"
+    shape = result["overview_probe"]["overview_shape"]
+    assert shape["status"] == "success"
+    assert shape["devices"][0]["RemainingTime"] == "62"
+    assert shape["devices"][0]["EstimatedFinish"] == "12:11"
+    assert shape["devices"][0]["GWID"] == "<redacted>"
+    assert shape["devices"][0]["Auth"] == "<redacted>"
+    assert shape["devices"][0]["NickName"] == "<redacted>"
+    assert shape["devices"][0]["DeviceID"] == "<redacted>"
+    assert shape["devices"][0]["description"] == "<text>"
+    dumped = str(result)
+    for secret in ("SENSITIVE_TOKEN", "PRIVATE_GATEWAY", "PRIVATE_AUTH", "Private owner", "secret private message"):
+        assert secret not in dumped
+    app._api_client.request.assert_awaited_once()
+    kwargs = app._api_client.request.await_args.kwargs
+    assert kwargs["method"] == "GET"
+    assert kwargs["endpoint"].endswith("/UserGetDeviceStatus")
+    assert kwargs["log"] is False
+
+
+async def test_laundry_overview_probe_suppresses_error_text():
+    """An HTTP error can include private response text; exclude it."""
+    entry = _entry_with_coordinator()
+    coordinator = entry.runtime_data
+    coordinator.data["device_auth_1"]["device_type"] = 3
+    app = coordinator.smart_app
+    app._token_manager.ensure_authenticated = AsyncMock()
+    app._token_manager.get_auth_headers.return_value = {"cptoken": "SENSITIVE_TOKEN"}
+    app._api_client.request = AsyncMock(side_effect=ValueError("PRIVATE_AUTH"))
+
+    result = await async_get_config_entry_diagnostics(Mock(), entry)
+
+    assert result["overview_probe"] == {"result": "error", "error_type": "ValueError"}
+    assert "PRIVATE_AUTH" not in str(result)
