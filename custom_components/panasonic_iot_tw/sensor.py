@@ -120,6 +120,16 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
                 return laundry_operation_state(
                     self._current_device, datetime.now(timezone.utc)
                 )
+            if self._data_source == "laundry_current_stage":
+                # NA-LX128B only: preserve the existing current_stage entity
+                # ID, but use the fresh DeviceGetInfo 0x54 with Overview
+                # fallback rather than the unsupported 0x34 bitfield.
+                phase = laundry_operation_state(
+                    self._current_device, datetime.now(timezone.utc)
+                )
+                return phase if phase in (
+                    "washing", "rinsing", "spinning", "drying", "soft_keeping"
+                ) else None
 
             # Handle special data sources (energy, CO2, door)
             if self._data_source in ["energy", "co2", "door"]:
@@ -180,7 +190,8 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
         # while DeviceGetInfo has no data. Other existing entities keep
         # the ordinary per-device availability policy unchanged.
         if self._data_source in (
-            "laundry_operation_state", "overview_remaining", "overview_eta"
+            "laundry_operation_state", "laundry_current_stage",
+            "overview_remaining", "overview_eta"
         ):
             if not self.coordinator.last_update_success:
                 return False
@@ -191,8 +202,16 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
                 self._current_device, "0x50", now
             ) is None:
                 return False
-            if self._data_source == "laundry_operation_state":
-                return laundry_operation_state(self._current_device, now) is not None
+            if self._data_source in (
+                "laundry_operation_state", "laundry_current_stage"
+            ):
+                state = laundry_operation_state(self._current_device, now)
+                if self._data_source == "laundry_current_stage":
+                    return state in (
+                        "washing", "rinsing", "spinning", "drying",
+                        "soft_keeping"
+                    )
+                return state is not None
             return current_expected_finish(self._current_device, now) is not None
 
         # For normal sensors, check if device is available (live data)
