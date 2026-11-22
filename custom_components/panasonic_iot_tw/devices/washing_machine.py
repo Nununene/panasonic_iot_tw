@@ -10,6 +10,7 @@ from homeassistant.const import UnitOfTime
 from ..base import BaseDevice, value_processors
 from ..const import (
     DISPENSER_AMOUNT_LEVELS,
+    LX128B_AVAILABLE_CYCLES,
     WASHING_MACHINE_AVAILABLE_STATUS,
     WASHING_MACHINE_AVAILABLE_CYCLES,
     WASHING_MACHINE_AVAILABLE_PHASES,
@@ -349,7 +350,7 @@ class WashingMachineDevice(BaseDevice):
             self._create_sensor(
                 coordinator,
                 command_type="0x50",
-                name="洗衣機運轉狀態（實驗性）",
+                name="洗衣機運轉狀態",
                 sensor_key="laundry_operation_state",
                 data_source="laundry_operation_state",
                 device_class=SensorDeviceClass.ENUM,
@@ -366,11 +367,21 @@ class WashingMachineDevice(BaseDevice):
                 name="行程別訊息",
                 sensor_key="cycle_message",
                 device_class=SensorDeviceClass.ENUM,
-                options=list(dict.fromkeys(WASHING_MACHINE_AVAILABLE_CYCLES.values())),
+                options=list(LX128B_AVAILABLE_CYCLES.values()),
                 value_processor=value_processors.create_status_mapping_processor(
-                    WASHING_MACHINE_AVAILABLE_CYCLES
+                    LX128B_AVAILABLE_CYCLES
                 ),
-                translation_key="washing_machine_cycle_message",
+                translation_key="washing_machine_lx128b_cycle_message",
+            ),
+            self._create_sensor(
+                coordinator,
+                command_type="0x4F",
+                name="nanoe殘時間",
+                sensor_key="nanoe_remaining_time",
+                data_source="laundry_nanoe_remaining",
+                device_class=SensorDeviceClass.DURATION,
+                unit=UnitOfTime.MINUTES,
+                translation_key="washing_machine_lx128b_nanoe_remaining_time",
             ),
             self._create_sensor(
                 coordinator,
