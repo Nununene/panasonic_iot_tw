@@ -85,7 +85,7 @@ class TestWashingMachineDevice:
         mock_coordinator.data[0]["status"]["0x50"] = "1"
         device = WashingMachineDevice(mock_coordinator, 0, mock_device_data)
         sensors = device.get_sensor_entities(mock_coordinator)
-        assert len(sensors) == 20
+        assert len(sensors) == 15  # LX128B: 10 supported + 5 raw Overview diagnostics
         state = next(
             sensor for sensor in sensors
             if sensor._attr_unique_id.endswith("_laundry_operation_state")
@@ -159,6 +159,56 @@ class TestWashingMachineDevice:
             "commands": {"0x50": "empty_string", "0x54": "empty_string"},
         }
         assert state.available is False
+
+
+    def test_lx128b_drops_legacy_unsupported_and_duplicate_sensors(
+        self, mock_coordinator, mock_device_data
+    ):
+        mock_device_data["model"] = "NA-LX128B"
+        mock_coordinator.data[0]["model"] = "NA-LX128B"
+        device = WashingMachineDevice(mock_coordinator, 0, mock_device_data)
+        sensors = device.get_sensor_entities(mock_coordinator)
+        ids = {e.unique_id.rsplit("washing_machine_test_001_", 1)[-1]
+               for e in sensors}
+        assert "programme_remaining_time" in ids
+        assert "programme_expected_finish" in ids
+        assert "laundry_operation_state" in ids
+        assert "cycle_message" in ids
+        assert "detergent_amount" in ids
+        assert "softener_amount" in ids
+        assert "error_code" in ids
+        assert {f"overview_{code}" for code in ("41", "4f", "50", "54", "20")} <= ids
+        # Only NA-LX128B has a new programme-time source. Do not
+        # register the old 0x13, 0x34, 0x05 and duplicate 0x50 entities.
+        for removed in (
+            "washing_remaining_time", "current_stage",
+            "schedule_remaining_time", "operation_status",
+            "drying_remaining_time", "drying_expected_finish",
+            "drying_error_code",
+        ):
+            assert removed not in ids
+
+        remaining = next(
+            e for e in sensors
+            if e.unique_id.endswith("_programme_remaining_time")
+        )
+        expected = next(
+            e for e in sensors
+            if e.unique_id.endswith("_programme_expected_finish")
+        )
+        assert remaining._command_type == "0x41"
+        assert remaining._data_source == "overview_remaining"
+        assert expected._command_type == "0x41"
+        assert expected._data_source == "overview_eta"
+
+        # No unsupported 0x34 phase binaries, but keep the dispenser
+        # shortage warnings and remote control status.
+        binaries = device.get_binary_sensor_entities(mock_coordinator)
+        assert len(binaries) == 3
+        binary_ids = {e.unique_id for e in binaries}
+        assert any(x.endswith("_detergent_low") for x in binary_ids)
+        assert any(x.endswith("_softener_low") for x in binary_ids)
+        assert any(x.endswith("_remote_control_allowed") for x in binary_ids)
 
 
     def test_get_sensor_entities_types(self, washing_machine_device, mock_coordinator):
