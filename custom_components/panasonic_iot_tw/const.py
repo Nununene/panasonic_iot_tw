@@ -238,6 +238,7 @@ DEVICE_STATUS_CODES = {
         ("0x19", True),   # Error code (0=normal; high byte=panel letter, low byte=number)
         ("0x34", True),   # Laundry phase bits: washer 128/64/32/16; dryer 8/4/2
         ("0x40", False),  # Unknown / Reserved
+        ("0x41", True),   # LX128B CommandList: programme remaining time (minutes); direct DeviceGetInfo validation 2026-11-22
         ("0x44", False),  # Unknown / Reserved
         ("0x45", False),  # Unknown / Reserved
         ("0x46", False),  # Unknown / Reserved
