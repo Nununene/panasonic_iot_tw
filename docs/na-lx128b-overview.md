@@ -70,11 +70,62 @@ and don't infer active heating or physical airflow solely from names.
 The cloud often returns **all blank** `Status` values or **partly blank**
 responses. A real example had 0x41/0x4F/0x20 empty but 0x50=2 and 0x54=6.
 
+## 2026-11-22 dual-API direct-read discovery and preferred source
+
+A separate **read-only** experiment called both endpoints sequentially
+for one NA-LX128B. At **08:17 Asia/Taipei**:
+
+| Command | UserGetDeviceStatus | DeviceGetInfo |
+| --- | --- | --- |
+| `0x41` 洗衣殘時間 | `""` | **`"150"`** |
+| `0x4F` nanoe殘時間 | `""` | **`"14"`** |
+| `0x50` 運轉情報 | `""` | **`"2"`** |
+| `0x54` 工程訊息 | `""` | **`"3"`** |
+| `0x20` 異常狀態 | `""` | **`"66"`** |
+
+Each DeviceGetInfo batch returned HTTP 200 and API `status=success`;
+Overview also returned HTTP 200 but all five fields were empty.
+The endpoint captures were seconds apart, not simultaneous. This
+proves these codes can be read **directly** from DeviceGetInfo and
+that Overview being empty must not erase a valid direct reading.
+The `150`-minute value has **not** been compared with the App's ETA
+in this exact capture; its interpretation as the full programme ETA
+remains experimental despite the model's command metadata.
+
+**Preferred-source policy for NA-LX128B, code by code:**
+
+- Request `0x20`, `0x41`, `0x4F` and `0x54` from DeviceGetInfo
+  in addition to its preexisting `0x50`.
+- If a **fresh, successful, parseable** DeviceGetInfo value is present,
+  use it, even if Overview disagrees.
+- If that **particular code** is missing, empty, invalid, or from a
+  SmartApp transient-failure cache bridge, fall back to a **fresh,
+  numeric, latest-response** UserGetDeviceStatus value. Never treat
+  an older cached Overview value as current.
+- `0x41` alone may create the programme ETA. `0x4F` remains
+  nanoe-related diagnostic data and is not interchangeable.
+- A fresh, confirmed non-running `0x50` clears a previous ETA. If
+  fresh direct `0x50` disagrees with Overview, direct takes priority.
+- The experimental wash/rinse/spin/dry/anti-crease state uses fresh
+  direct `0x54` first. Existing **pause versus powered-off**
+  disambiguation still requires the independently validated Overview
+  clue, since DeviceGetInfo `0x01=2`, `0x50=7` was observed
+  in *both* situations.
+- Only the experimental operation and ETA entities can remain
+  available from a live Overview reading if direct per-device status
+  is unavailable. Other entities retain their previous availability
+  behavior. Raw `overview_*` diagnostic sensors still show their
+  **own** endpoint's values, not the merged preferred state.
+- DeviceGetInfo samples now carry a read timestamp and a
+  `status_is_cached` marker, so the two-poll failure bridge cannot
+  reset an ETA from stale minutes. No added timer or control command.
+
 ## HA entities
 
-- Existing `drying_remaining_time` unique-ID suffix now reads from the
-  overview-derived ETA rather than DeviceGetInfo 0x05 (which returned
-  `-1683.3` in real tests). No new duplicate for this existing entity.
+- Existing `drying_remaining_time` unique-ID suffix now reads
+  an ETA derived **first from fresh DeviceGetInfo 0x41**, falling back to
+  fresh overview 0x41. The legacy DeviceGetInfo 0x05 returned
+  `-1683.3`. The existing entity ID remains unchanged.
 - New `drying_expected_finish` timestamp entity.
 - Five **diagnostic** raw numeric entities for 0x41, 0x4F, 0x50, 0x54, 0x20,
   separately identifying their `UserGetDeviceStatus` origin.
@@ -87,8 +138,8 @@ the ETA is cleared as a conservative first approximation.
 
 The account-level GET normally runs no more than once every 3 minutes, only
 while a Type 3 device is registered. During an actively running Type 3 cycle
-(`DeviceGetInfo 0x50=2`) with **no fresh overview ETA**, the next normal HA
-coordinator poll may retry after a minimum of 1 minute. It does not issue
+(`DeviceGetInfo 0x50=2`) with **no fresh valid ETA from either source**,
+the next normal HA coordinator poll may retry after a minimum of 1 minute. It does not issue
 back-to-back requests, create a separate background loop, or override the
 configured HA update interval. Once a fresh ETA is available, requests revert
 to the 3-minute cadence. Failures do not interrupt ordinary HA entities.
