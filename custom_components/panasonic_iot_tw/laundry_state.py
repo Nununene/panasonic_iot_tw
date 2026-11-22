@@ -104,7 +104,13 @@ def _confirmed_phase(device: dict[str, Any], now: datetime) -> int | None:
     operation, _ = _current_operation(device, now)
     if operation != 2:
         return None
-    phase, _ = preferred_laundry_command(device, "0x54", now)
+    phase, source = preferred_laundry_command(device, "0x54", now)
+    if source == "UserGetDeviceStatus":
+        # A phase taken from Overview cannot be trusted if this same
+        # fresh Overview explicitly reports a non-running operation.
+        overview_operation = fresh_overview_command(device, "0x50", now)
+        if overview_operation is not None and overview_operation != 2:
+            return None
     return phase
 
 
