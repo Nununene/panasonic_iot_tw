@@ -97,6 +97,14 @@ class TestPendingPhaseWord:
         processor = value_processors.create_pending_phase_processor(DRYER_AVAILABLE_PHASES)
         assert processor(packed) == expected
 
+    @pytest.mark.parametrize("packed,expected", DRYER_SEQUENCE)
+    def test_washer_dryer_combo_sequence(self, packed, expected):
+        """Type 3 washer-dryer combos use the unified washer/dryer phase map."""
+        processor = value_processors.create_pending_phase_processor(
+            WASHING_MACHINE_AVAILABLE_PHASES
+        )
+        assert processor(packed) == expected
+
     def test_prewash_is_the_first_phase_when_the_programme_uses_it(self):
         processor = value_processors.create_pending_phase_processor(
             WASHING_MACHINE_AVAILABLE_PHASES

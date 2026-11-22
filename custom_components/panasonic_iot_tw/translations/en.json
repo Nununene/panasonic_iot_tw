@@ -249,7 +249,10 @@
           "washing": "Washing",
           "rinsing": "Rinsing",
           "spinning": "Spinning",
-          "finished": "Finished"
+          "finished": "Finished",
+          "drying": "Drying",
+          "air_flow": "Air flow",
+          "soft_cooling": "Soft cooling"
         }
       },
       "dryer_current_stage": {
@@ -278,6 +281,72 @@
           "normal": "Normal",
           "more": "More"
         }
+      },
+      "washing_machine_lx128b_nanoe_remaining_time": {
+        "name": "nanoe Remaining Time"
+      },
+      "washing_machine_lx128b_cycle_message": {
+        "name": "Programme",
+        "state": {
+          "standard": "Standard",
+          "intensive": "Intensive",
+          "delicate": "Delicates",
+          "soak": "Soak",
+          "quick_wash": "Quick Wash",
+          "tub_clean": "Tub Cleaning",
+          "large_items": "Large Items",
+          "quiet_night": "Quiet Night",
+          "warm_wash_standard": "Warm-Water Stain Removal (Standard)",
+          "warm_wash_intensive": "Warm-Water Stain Removal (Intensive)",
+          "medium_temp_deodorize": "Medium-Temperature Deodorizing",
+          "high_temp_sanitize": "High-Temperature Antibacterial",
+          "warm_soak": "Warm Soak",
+          "warm_tub_clean": "Warm-Water Tub Cleaning"
+        }
+      },
+      "washing_machine_lx128b_programme_remaining_time": {
+        "name": "Programme Remaining Time"
+      },
+      "washing_machine_lx128b_programme_expected_finish": {
+        "name": "Programme Expected Finish"
+      },
+      "washing_machine_drying_remaining_time": {
+        "name": "Drying Remaining Time"
+      },
+      "washing_machine_drying_error_code": {
+        "name": "Dryer Error Code"
+      },
+      "washing_machine_drying_expected_finish": {
+        "name": "Drying Expected Finish"
+      },
+      "washing_machine_laundry_operation_state": {
+        "name": "Washer-Dryer Operation State",
+        "state": {
+          "off": "Powered off",
+          "standby": "Standby",
+          "running": "Running",
+          "washing": "Washing",
+          "rinsing": "Rinsing",
+          "spinning": "Spinning",
+          "drying": "Drying",
+          "soft_keeping": "Anti-crease holding",
+          "paused": "Paused"
+        }
+      },
+      "washing_machine_overview_41": {
+        "name": "Cloud Raw Status 0x41"
+      },
+      "washing_machine_overview_4f": {
+        "name": "Cloud Raw Status 0x4F"
+      },
+      "washing_machine_overview_50": {
+        "name": "Cloud Raw Status 0x50"
+      },
+      "washing_machine_overview_54": {
+        "name": "Cloud Raw Status 0x54"
+      },
+      "washing_machine_overview_20": {
+        "name": "Cloud Raw Status 0x20"
       }
     },
     "binary_sensor": {
@@ -348,6 +417,15 @@
           "on": "Low",
           "off": "No warning"
         }
+      },
+      "washing_machine_drying_status": {
+        "name": "Running - Drying"
+      },
+      "washing_machine_air_flow_status": {
+        "name": "Running - Air flow"
+      },
+      "washing_machine_soft_cooling_status": {
+        "name": "Running - Soft cooling"
       }
     },
     "switch": {

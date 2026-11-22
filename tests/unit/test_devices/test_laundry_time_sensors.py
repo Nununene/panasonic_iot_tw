@@ -1,5 +1,6 @@
 """Unit tests for washer/dryer duration sensor gating."""
 import pytest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 from homeassistant.helpers.entity import EntityCategory
@@ -47,6 +48,7 @@ def _set_status(coordinator, **status):
 
 
 WASHER_STATUS = {"0x13": 47, "0x15": 3, "0x50": 2, "0x55": 1}
+COMBO_WASHER_STATUS = {**WASHER_STATUS, "0x05": 47}
 DRYER_STATUS = {"0x05": 47, "0x15": 3, "0x50": 2, "0x55": 1}
 
 
@@ -99,6 +101,36 @@ class TestDurationSensorGating:
         _set_status(coordinator, **{"0x15": 3, "0x50": operation_status})
         assert sensors["schedule_remaining_time"].native_value == expected
 
+    def test_combo_dryer_remaining_time_uses_overview_instead_of_0x05(self):
+        """Type 3 combo reads validated overview ETA, not invalid 0x05."""
+        coordinator, sensors = _sensors(WashingMachineDevice, COMBO_WASHER_STATUS)
+        now = datetime.now(timezone.utc)
+        device = coordinator.data["dev1"]
+        device["status"] = {"0x05": "-1683.3", "0x50": 2}
+        device["overview_status"] = {
+            "0x41": 47, "0x4F": 47, "0x50": 2,
+            "0x54": 6, "0x20": 66,
+        }
+        device["overview_expected_finish_at"] = (
+            now + timedelta(minutes=47)
+        ).isoformat()
+        device["overview_eta_observed_at"] = now.isoformat()
+        device["overview_eta_command"] = "0x41"
+        assert sensors["drying_remaining_time"].native_value == 47
+        assert sensors["drying_expected_finish"].native_value == (
+            now + timedelta(minutes=47)
+        )
+        for code in ("41", "4f", "50", "54", "20"):
+            assert sensors[f"overview_{code}"].native_value == {
+                "41": 47, "4f": 47, "50": 2, "54": 6, "20": 66,
+            }[code]
+
+    def test_combo_dryer_api_sentinel_returns_none(self):
+        """An invalid Panasonic cloud sentinel must not be shown as minutes."""
+        coordinator, sensors = _sensors(WashingMachineDevice, COMBO_WASHER_STATUS)
+        _set_status(coordinator, **{"0x05": "-1683.3", "0x50": 2})
+        assert sensors["drying_remaining_time"].native_value is None
+
     def test_missing_gate_status_returns_none(self):
         coordinator, sensors = _sensors(WashingMachineDevice, WASHER_STATUS)
         _set_status(coordinator, **{"0x13": 47})
@@ -137,6 +169,13 @@ class TestErrorCodeSensor:
         """0x19 reads 0 on the dryer even during a fault, so it must not be used."""
         coordinator, sensors = _sensors(DryerDevice, DRYER_STATUS)
         _set_status(coordinator, **{"0x19": 21772, "0x0A": 0, "0x50": 8})
+        assert sensors["error_code"].native_value is None
+
+    def test_combo_dryer_error_register_is_exposed_separately(self):
+        """Type 3 combo models use 0x0A without replacing the washer's 0x19."""
+        coordinator, sensors = _sensors(WashingMachineDevice, COMBO_WASHER_STATUS)
+        _set_status(coordinator, **{"0x0A": 21772, "0x19": 0, "0x50": 8})
+        assert sensors["drying_error_code"].native_value == "U12"
         assert sensors["error_code"].native_value is None
 
     def test_raw_value_kept_as_attribute(self):

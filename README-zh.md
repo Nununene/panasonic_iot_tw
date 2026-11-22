@@ -17,7 +17,7 @@ Home Assistant 原生實體。本整合為 `cloud_polling`（雲端輪詢）類�
 | **冷氣機** | climate、sensor、switch、select、number | 溫度／模式／風量／擺風、nanoeX、ECONAVI、急速、自體淨、定時器、室內外溫度、PM2.5 |
 | **除濕機** | humidifier、sensor、binary_sensor、switch、select、number、button | 目標濕度、運轉模式、風向設定、水箱滿水、nanoe、PM2.5、開／關機定時 |
 | **冰箱** | sensor、binary_sensor、switch、select | 冷凍／冷藏／微凍結溫度、新鮮急凍結／冬季／購物／外出模式、ECO、除霜、nanoe、製冰、能耗／碳足跡／開門次數感測器、門未關警示 |
-| **洗衣機** | sensor、binary_sensor | 運轉情報、行程別訊息、剩餘時間、面板錯誤碼、洗衣劑不足、各階段工程資訊位元、遠端操作授權 |
+| **洗衣機** | sensor、binary_sensor | 運轉情報、行程別訊息、洗衣／乾衣剩餘時間、洗衣／乾衣錯誤碼、洗衣劑不足、洗衣／乾衣階段、遠端操作授權 |
 | **烘乾機** | sensor、binary_sensor | 運轉情報、行程別訊息、剩餘時間、面板錯誤碼、各階段工程資訊位元、遠端操作授權 |
 | **全熱交換器（ERV）** | sensor、select | 運轉模式、風量設定 |
 | **空氣清淨機** | sensor、switch | 風量、nanoeX、PM2.5 |
@@ -25,6 +25,12 @@ Home Assistant 原生實體。本整合為 `cloud_polling`（雲端輪詢）類�
 
 啟用的平台：`climate`、`humidifier`、`sensor`、`binary_sensor`、`switch`、`select`、
 `number`、`button`。
+
+除了 NA-LX128B 之外，雲端回報為洗衣機（設備類型 3）的洗衣乾衣一體機，仍會查詢乾衣專用暫存器：`0x05`（乾衣剩餘時間）及 `0x0A`（乾衣面板錯誤碼），並從 `0x34` 解碼乾衣階段。
+
+**NA-LX128B 型號專屬支援：** 行程剩餘時間與預計完成時間使用 `DeviceGetInfo 0x41`；`0x50`／`0x54` 用來辨識運轉、洗衣、洗清、脫水、乾衣等階段；`0x4F` 是 nanoe 剩餘時間，`0x55` 使用此機型的行程名稱對照。個別欄位在 `DeviceGetInfo` 缺值時，才參考 `UserGetDeviceStatus` 最新有效回應。其他洗衣機型號維持原有的欄位與行為。
+
+**舊版 NA-LX128B 使用者注意：** 升級後，部分不再提供的舊實體（例如「目前階段」`current_stage`、舊版「洗衣殘時間」及「乾衣殘時間」）可能仍以「不可用」留在 HA 實體登錄資料。請先更新卡片、自動化所參照的實體，再確認並移除舊登錄。新版以 `laundry_operation_state`、`programme_remaining_time`、`programme_expected_finish` 及 `nanoe_remaining_time` 為主。
 
 ## 系統需求
 
