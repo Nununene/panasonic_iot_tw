@@ -251,7 +251,11 @@ class SmartApp:
                     "Status fetch for %s failed (%d in a row), keeping last known state",
                     data.get("nickname") or mask_value(device_id), failures,
                 )
-                device_data[device_id] = previous
+                # Preserve the last true read timestamp, but mark this
+                # iteration as a cache bridge. Fresh UserGetDeviceStatus
+                # may then be considered without mistaking this old
+                # DeviceGetInfo payload for a newly returned value.
+                device_data[device_id] = {**previous, "status_is_cached": True}
 
     async def get_device_with_info(self, status_codes_dict: Dict[int, List[Union[str, Tuple[str, bool]]]]) -> Dict[str, Dict[str, Any]]:
         """
@@ -320,6 +324,7 @@ class SmartApp:
                     **device,
                     "status": processed_status.get("status", {}),
                     "available": processed_status.get("available", False),
+                    "status_is_cached": False,
                     # Timestamp only genuine successful DeviceGetInfo samples;
                     # the two-poll transient-failure bridge copies this value
                     # unchanged, so stale minutes are never re-timestamped.
@@ -336,6 +341,7 @@ class SmartApp:
                     **device,
                     "status": {},
                     "available": False,
+                    "status_is_cached": False,
                     "status_observed_at": None,
                 }
 
