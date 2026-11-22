@@ -35,6 +35,73 @@ def _device(power, operation, stage=None, *, moment=BASE, model="NA-LX128B"):
     return device
 
 
+def test_direct_stage_and_operation_override_conflicting_overview():
+    # In a successful direct poll, 0x50 and 0x54 take precedence over
+    # another endpoint even if the Overview codes are also numeric.
+    device = _device(1, 2, 3)
+    device["available"] = True
+    device["status"].update({"0x54": "5"})
+    device["status_observed_at"] = BASE.isoformat()
+    device["status_is_cached"] = False
+    assert laundry_operation_state(device, BASE) == "spinning"
+    attrs = laundry_state_attributes(device, BASE)
+    assert attrs["effective_0x50_source"] == "DeviceGetInfo"
+    assert attrs["effective_0x54_source"] == "DeviceGetInfo"
+
+
+def test_direct_missing_stage_falls_back_to_fresh_overview():
+    device = _device(1, 2, 4)
+    device["available"] = True
+    device["status"]["0x54"] = "-1683.3"
+    device["status_observed_at"] = BASE.isoformat()
+    device["status_is_cached"] = False
+    assert laundry_operation_state(device, BASE) == "rinsing"
+    assert laundry_state_attributes(device, BASE)[
+        "effective_0x54_source"
+    ] == "UserGetDeviceStatus"
+
+
+def test_cached_device_info_does_not_override_newer_overview_phase():
+    device = _device(1, 2, 4)
+    device["available"] = True
+    device["status"]["0x54"] = "5"
+    device["status_observed_at"] = BASE.isoformat()
+    device["status_is_cached"] = True
+    assert laundry_operation_state(device, BASE) == "rinsing"
+
+
+def test_direct_standby_prevents_overview_running_phase():
+    device = _device(1, 1, 3)
+    device["available"] = True
+    device["status"]["0x54"] = "5"
+    device["status_observed_at"] = BASE.isoformat()
+    device["status_is_cached"] = False
+    assert laundry_operation_state(device, BASE) == "standby"
+
+
+def test_overview_can_drive_state_when_direct_status_unavailable():
+    device = _device(1, 2, 3)
+    device["available"] = False
+    device["status"] = {}
+    device["status_observed_at"] = None
+    device["status_is_cached"] = False
+    assert laundry_operation_state(device, BASE) == "washing"
+    assert laundry_state_attributes(device, BASE)[
+        "effective_0x50_source"
+    ] == "UserGetDeviceStatus"
+
+
+def test_stale_direct_and_expired_overview_do_not_report_running():
+    device = _device(1, 2, 3)
+    device["available"] = True
+    device["status"]["0x54"] = "3"
+    device["status_observed_at"] = (
+        BASE - timedelta(minutes=6)
+    ).isoformat()
+    device["status_is_cached"] = True
+    assert laundry_operation_state(device, BASE + timedelta(minutes=6)) is None
+
+
 def test_washing_phase_3_from_wash_only_app_and_cloud_metadata():
     # At 20:24:24 Taipei on 2026-11-21, the App showed 洗衣中 in
     # wash-only; same successful overview returned 0x50=2 and 0x54=3.
