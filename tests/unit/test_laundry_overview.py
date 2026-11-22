@@ -40,6 +40,173 @@ def _payload(statuses):
     }
 
 
+def test_real_dual_api_sample_prefers_fresh_device_info_41():
+    # Captured 2026-11-22 08:17 Taipei:
+    # Overview 0x41/0x50/0x54 are all "", but direct DeviceGetInfo
+    # returned 0x41=150, 0x4F=14, 0x50=2, 0x54=3.
+    # 0x4F must not affect the programme ETA.
+    device_data = _device_data()
+    washer = device_data["laundry"]
+    washer["model"] = "NA-LX128B"
+    washer["status"] = {"0x01": "1", "0x41": "150", "0x4F": "14", "0x50": "2", "0x54": "3"}
+    washer["status_observed_at"] = START.isoformat()
+    payload = _payload({
+        "0x41": "", "0x4F": "", "0x50": "", "0x54": "", "0x20": ""
+    })
+    result = attach_laundry_overview(device_data, None, payload, START)
+    actual = result["laundry"]
+    assert actual["overview_status"] == {}
+    assert actual["overview_eta_command"] == "device_get_info:0x41"
+    assert current_remaining_minutes(actual, START) == 150
+    assert current_expected_finish(actual, START) == START + timedelta(minutes=150)
+
+
+def test_failed_device_info_poll_does_not_restart_41_countdown():
+    initial = _device_data()
+    initial["laundry"].update({
+        "model": "NA-LX128B",
+        "status": {"0x41": "150", "0x50": "2"},
+        "status_observed_at": START.isoformat(),
+    })
+    blank = _payload({"0x41": "", "0x50": "", "0x54": ""})
+    first = attach_laundry_overview(initial, None, blank, START)
+    next_time = START + timedelta(minutes=3)
+    bridged = _device_data()
+    bridged["laundry"].update({
+        "model": "NA-LX128B",
+        "status": {"0x41": "150", "0x50": "2"},
+        # Status timestamp copied from failed poll's last-good-data bridge.
+        "status_observed_at": START.isoformat(),
+        "status_is_cached": True,
+    })
+    result = attach_laundry_overview(bridged, first, blank, next_time)
+    actual = result["laundry"]
+    assert actual["overview_eta_command"] == "device_get_info:0x41"
+    assert current_remaining_minutes(actual, next_time) == 147
+    assert current_expected_finish(actual, next_time) == (
+        START + timedelta(minutes=150)
+    )
+
+
+def test_direct_41_and_50_override_conflicting_overview_values():
+    device = _device_data()
+    device["laundry"].update({
+        "model": "NA-LX128B", "status_observed_at": START.isoformat(),
+        "status_is_cached": False,
+        "status": {"0x41": "150", "0x50": "2"},
+    })
+    result = attach_laundry_overview(
+        device, None, _payload({"0x41": "30", "0x50": "5"}), START
+    )["laundry"]
+    assert result["overview_eta_command"] == "device_get_info:0x41"
+    assert current_remaining_minutes(result, START) == 150
+
+
+def test_missing_direct_41_falls_back_to_fresh_overview_with_direct_running():
+    device = _device_data()
+    device["laundry"].update({
+        "model": "NA-LX128B", "status_observed_at": START.isoformat(),
+        "status_is_cached": False,
+        "status": {"0x41": "-1683.3", "0x50": "2"},
+    })
+    result = attach_laundry_overview(
+        device, None, _payload({"0x41": "86", "0x50": ""}), START
+    )["laundry"]
+    assert result["overview_eta_command"] == "0x41"
+    assert result["overview_expected_finish_at"] == (
+        START + timedelta(minutes=86)
+    ).isoformat()
+
+
+def test_stale_device_info_41_yields_to_live_overview_41():
+    device = _device_data()
+    device["laundry"].update({
+        "model": "NA-LX128B", "status_observed_at": START.isoformat(),
+        "status_is_cached": True,
+        "status": {"0x41": "150", "0x50": "2"},
+    })
+    result = attach_laundry_overview(
+        device, None, _payload({"0x41": "87", "0x50": "2"}), START
+    )["laundry"]
+    assert result["overview_eta_command"] == "0x41"
+    assert result["overview_expected_finish_at"] == (
+        START + timedelta(minutes=87)
+    ).isoformat()
+
+
+def test_live_overview_can_provide_eta_when_device_info_is_unavailable():
+    device = _device_data()
+    device["laundry"].update({
+        "model": "NA-LX128B",
+        "status": {}, "available": False,
+        "status_observed_at": None, "status_is_cached": False,
+    })
+    result = attach_laundry_overview(
+        device, None, _payload({"0x41": "55", "0x50": "2"}), START
+    )["laundry"]
+    # Simulate the coordinator saving this latest verified Overview.
+    result["overview_last_response_at"] = START.isoformat()
+    result["overview_last_response_summary"] = {
+        "result": "matched",
+        "commands": {"0x41": "numeric", "0x50": "numeric"},
+    }
+    assert result["overview_eta_command"] == "0x41"
+    assert current_remaining_minutes(result, START) == 55
+
+
+def test_fresh_direct_standby_blocks_overview_running_eta():
+    device = _device_data()
+    device["laundry"].update({
+        "model": "NA-LX128B", "status_observed_at": START.isoformat(),
+        "status": {"0x41": "110", "0x50": "1"},
+    })
+    result = attach_laundry_overview(
+        device, None, _payload({"0x41": "99", "0x50": "2"}), START
+    )["laundry"]
+    assert result["overview_eta_command"] is None
+    assert current_expected_finish(result, START) is None
+
+
+def test_device_info_41_ignores_sentinel_and_does_not_use_nanoe_4f():
+    device_data = _device_data()
+    device_data["laundry"].update({
+        "model": "NA-LX128B",
+        "status": {"0x41": "-1683.3", "0x4F": "14", "0x50": "2"},
+        "status_observed_at": START.isoformat(),
+    })
+    actual = attach_laundry_overview(
+        device_data, None,
+        _payload({"0x41": "", "0x4F": "", "0x50": ""}), START
+    )["laundry"]
+    assert actual["overview_eta_command"] is None
+    assert current_remaining_minutes(actual, START) is None
+
+
+def test_device_info_fresh_standby_clears_previous_eta():
+    first_data = _device_data()
+    first_data["laundry"].update({
+        "model": "NA-LX128B",
+        "status": {"0x41": "120", "0x50": "2"},
+        "status_observed_at": START.isoformat(),
+    })
+    first = attach_laundry_overview(
+        first_data, None, _payload({"0x41": "", "0x50": ""}), START
+    )
+    next_time = START + timedelta(minutes=3)
+    standby = _device_data()
+    standby["laundry"].update({
+        "model": "NA-LX128B",
+        "status": {"0x41": "", "0x50": "1"},
+        "status_observed_at": next_time.isoformat(),
+    })
+    result = attach_laundry_overview(
+        standby, first, _payload({"0x41": "", "0x50": ""}), next_time
+    )
+    actual = result["laundry"]
+    assert actual["overview_eta_command"] is None
+    assert current_expected_finish(actual, next_time) is None
+
+
 def test_decoding_keeps_independent_registers_without_empty_as_zero():
     readings = decode_overview(_payload({
         "0x41": "", "0x4F": None, "0x50": "2",
@@ -160,14 +327,88 @@ def test_stopped_appliance_clears_eta_even_if_minutes_old_values_remain():
     assert current_remaining_minutes(data["laundry"], now) is None
 
 
-def test_4f_fallback_when_41_missing():
+def test_4f_nanoe_time_is_never_a_whole_programme_eta_even_during_drying():
+    # Cloud model metadata: 0x4F = nanoe殘時間, not total or phase ETA.
     data = attach_laundry_overview(
         _device_data(), None,
-        _payload({"0x41": "", "0x4F": "85", "0x50": "2"}),
+        _payload({
+            "0x41": "", "0x4F": "85", "0x50": "2", "0x54": "6",
+        }),
         START,
     )
-    assert data["laundry"]["overview_eta_command"] == "0x4F"
-    assert current_remaining_minutes(data["laundry"], START) == 85
+    assert data["laundry"]["overview_status"]["0x4F"] == 85
+    assert data["laundry"]["overview_eta_command"] is None
+    assert current_expected_finish(data["laundry"], START) is None
+
+
+def test_old_nanoe_derived_eta_cannot_survive_new_observation():
+    prior = attach_laundry_overview(
+        _device_data(), None,
+        _payload({"0x41": "120", "0x50": "2", "0x54": "6"}),
+        START,
+    )
+    old = prior["laundry"]
+    old["overview_eta_command"] = "0x4F"
+    next_minute = START + timedelta(minutes=1)
+    next_data = attach_laundry_overview(
+        _device_data(), prior,
+        _payload({"0x41": "", "0x4F": "60", "0x50": "2", "0x54": "6"}),
+        next_minute,
+    )
+    assert current_expected_finish(next_data["laundry"], next_minute) is None
+    assert next_data["laundry"]["overview_eta_command"] is None
+
+
+def test_0x41_schema_allows_up_to_1440_minutes():
+    data = attach_laundry_overview(
+        _device_data(), None,
+        _payload({"0x41": "750", "0x4F": "11", "0x50": "2"}),
+        START,
+    )
+    assert current_remaining_minutes(data["laundry"], START) == 750
+    assert data["laundry"]["overview_eta_command"] == "0x41"
+
+
+def test_spin_phase_4f_does_not_override_missing_full_cycle_41():
+    # Actual cycle: 15:02 spin had 0x41=116, 0x4F=11.
+    # CommandList now confirms that 0x4F is nanoe time, not spin time.
+    data = attach_laundry_overview(
+        _device_data(), None,
+        _payload({
+            "0x41": "", "0x4F": "11", "0x50": "2", "0x54": "5",
+        }),
+        START,
+    )
+    assert data["laundry"]["overview_eta_command"] is None
+    assert current_expected_finish(data["laundry"], START) is None
+
+
+def test_time_codes_disagree_in_spin_prefers_full_programme_41():
+    data = attach_laundry_overview(
+        _device_data(), None,
+        _payload({
+            "0x41": "116", "0x4F": "11", "0x50": "2",
+            "0x54": "5", "0x20": "66",
+        }),
+        START,
+    )
+    assert data["laundry"]["overview_eta_command"] == "0x41"
+    assert current_remaining_minutes(data["laundry"], START) == 116
+    assert current_expected_finish(data["laundry"], START) == (
+        START + timedelta(minutes=116)
+    )
+
+
+def test_4f_without_fresh_phase_code_cannot_supply_full_cycle_eta():
+    # Even if the cached stage used to be drying, the latest 0x54 might
+    # have been omitted or empty while the programme changed phases.
+    data = attach_laundry_overview(
+        _device_data(), None,
+        _payload({"0x41": "", "0x4F": "11", "0x50": "2"}),
+        START,
+    )
+    assert data["laundry"]["overview_eta_command"] is None
+    assert current_remaining_minutes(data["laundry"], START) is None
 
 
 def test_invalid_sentinels_and_negative_remaining_minutes_are_ignored():

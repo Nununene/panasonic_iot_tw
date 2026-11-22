@@ -27,7 +27,11 @@ native Home Assistant entities. This is a `cloud_polling` integration.
 Enabled platforms: `climate`, `humidifier`, `sensor`, `binary_sensor`, `switch`,
 `select`, `number`, `button`.
 
-Washer-dryer combo models reported by the cloud as washing machines (device type 3) also query dryer-specific registers `0x05` (remaining time) and `0x0A` (panel error code), and decode the dryer phases from register `0x34`.
+Washer-dryer combo models other than NA-LX128B reported as washing machines (device type 3) also query dryer-specific registers `0x05` (remaining time) and `0x0A` (panel error code), and decode dryer phases from register `0x34`.
+
+**NA-LX128B has model-specific support:** `DeviceGetInfo 0x41` supplies programme remaining minutes and the expected finish time, `0x50`/`0x54` describe operation and washing/rinsing/spinning/drying phases, `0x4F` supplies vendor-defined nanoe remaining minutes, and `0x55` uses the model's published programme enumeration. When a specific `DeviceGetInfo` register is missing or invalid, only a fresh numeric `UserGetDeviceStatus` sample is considered as fallback. Other washer models retain their original mappings.
+
+**Migrating from earlier NA-LX128B experimental builds:** Home Assistant may retain unavailable legacy registry entries such as `current_stage`, `washing_remaining_time` and `drying_remaining_time`. Update dashboards and automations to use `laundry_operation_state`, `programme_remaining_time`, `programme_expected_finish` and optionally `nanoe_remaining_time`; remove obsolete entity registry entries only after verifying that nothing depends on them.
 
 ## Requirements
 

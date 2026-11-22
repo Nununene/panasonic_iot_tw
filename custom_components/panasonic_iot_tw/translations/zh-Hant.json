@@ -282,6 +282,34 @@
           "more": "較多"
         }
       },
+      "washing_machine_lx128b_nanoe_remaining_time": {
+        "name": "nanoe殘時間"
+      },
+      "washing_machine_lx128b_cycle_message": {
+        "name": "行程別訊息",
+        "state": {
+          "standard": "標準行程",
+          "intensive": "加強行程",
+          "delicate": "高級衣行程",
+          "soak": "浸泡行程",
+          "quick_wash": "快洗行程",
+          "tub_clean": "槽洗淨行程",
+          "large_items": "大件行程",
+          "quiet_night": "夜靜行程",
+          "warm_wash_standard": "溫水去污標準行程",
+          "warm_wash_intensive": "溫水去污加強行程",
+          "medium_temp_deodorize": "中溫除臭行程",
+          "high_temp_sanitize": "高溫抑菌行程",
+          "warm_soak": "溫泡洗行程",
+          "warm_tub_clean": "溫水槽洗淨行程"
+        }
+      },
+      "washing_machine_lx128b_programme_remaining_time": {
+        "name": "行程剩餘時間"
+      },
+      "washing_machine_lx128b_programme_expected_finish": {
+        "name": "行程預計完成時間"
+      },
       "washing_machine_drying_remaining_time": {
         "name": "乾衣殘時間"
       },
@@ -290,6 +318,20 @@
       },
       "washing_machine_drying_expected_finish": {
         "name": "乾衣預計完成時間"
+      },
+      "washing_machine_laundry_operation_state": {
+        "name": "洗衣機運轉狀態",
+        "state": {
+          "off": "關機",
+          "standby": "待機中",
+          "running": "運轉中",
+          "washing": "洗衣中",
+          "rinsing": "洗清中",
+          "spinning": "脫水中",
+          "drying": "乾衣中",
+          "soft_keeping": "鬆柔保持中",
+          "paused": "一時停止中"
+        }
       },
       "washing_machine_overview_41": {
         "name": "雲端原始狀態 0x41"

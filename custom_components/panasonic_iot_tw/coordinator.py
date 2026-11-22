@@ -117,10 +117,10 @@ class PanasonicCoordinator(DataUpdateCoordinator[Dict[str, Dict[str, Any]]]):
                 err,
             )
 
-        # The account-level overview is the only endpoint observed to carry
-        # valid NA-LX128B drying minutes. Read only for Type 3 devices, no more
-        # often than every 3 minutes, and do not fail normal polling if this
-        # supplementary endpoint is empty or temporarily inaccessible.
+        # On NA-LX128B, DeviceGetInfo 0x41 is now the preferred ETA
+        # source. The independent account overview remains a read-only
+        # fallback, phase/paused-state cross-check and diagnostic source.
+        # Do not fail ordinary polling if this endpoint is empty.
         now = datetime.now(timezone.utc)
         if any(device.get("device_type") == 3 for device in data.values()):
             overview_payload = None
