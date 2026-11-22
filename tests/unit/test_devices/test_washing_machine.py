@@ -144,6 +144,22 @@ class TestWashingMachineDevice:
         assert "rinsing" in state.options
         assert state.native_value == "rinsing"
 
+        # Successful latest Overview can keep this experimental sensor
+        # available after DeviceGetInfo becomes temporarily unavailable.
+        mock_coordinator.data[0]["status"] = {}
+        mock_coordinator.data[0]["available"] = False
+        mock_coordinator.data[0]["status_observed_at"] = None
+        mock_coordinator.data[0]["status_is_cached"] = False
+        assert state.available is True
+        assert state.native_value == "rinsing"
+
+        # Neither source now reports live 0x50: do not claim availability.
+        mock_coordinator.data[0]["overview_last_response_summary"] = {
+            "result": "matched",
+            "commands": {"0x50": "empty_string", "0x54": "empty_string"},
+        }
+        assert state.available is False
+
 
     def test_get_sensor_entities_types(self, washing_machine_device, mock_coordinator):
         """Test that sensor entities have correct types and properties."""
