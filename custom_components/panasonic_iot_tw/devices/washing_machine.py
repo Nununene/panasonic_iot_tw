@@ -91,37 +91,22 @@ class WashingMachineDevice(BaseDevice):
         return self.get_boolean_status(self.REMOTE_CONTROL_COMMAND)
     
     def get_sensor_entities(self, coordinator) -> List:
-        """Return sensor entities for washing machine.
-
-        NA-LX128B has confirmed 0x41/0x54 semantics; other Type 3
-        washers retain the legacy 0x13/0x34 decoding without change.
-        """
-        is_lx128b = str(self.model).upper() == "NA-LX128B"
+        """Return model-specific sensors without altering other washers."""
+        if str(self.model).upper() == "NA-LX128B":
+            return self._get_lx128b_sensor_entities(coordinator)
         sensors = [
             # Time sensors with formatting
             self._create_sensor(
                 coordinator,
-                command_type=(
-                    "0x41" if is_lx128b
-                    else self.WASHING_REMAINING_TIME_COMMAND
-                ),
+                command_type=self.WASHING_REMAINING_TIME_COMMAND,
                 name="洗衣殘時間",
                 sensor_key="washing_remaining_time",
                 device_class=SensorDeviceClass.DURATION,
                 unit=UnitOfTime.MINUTES,
-                data_source=(
-                    "overview_remaining" if is_lx128b else "status"
-                ),
-                value_processor=(
-                    None if is_lx128b else value_processors.safe_int
-                ),
+                value_processor=value_processors.safe_int,
                 extra_state_processor=value_processors.create_time_formatter("minutes"),
-                gate_command=(
-                    None if is_lx128b else self.OPERATION_STATUS_COMMAND
-                ),
-                gate_allowed=(
-                    None if is_lx128b else self.REMAINING_TIME_STATUSES
-                ),
+                gate_command=self.OPERATION_STATUS_COMMAND,
+                gate_allowed=self.REMAINING_TIME_STATUSES,
                 translation_key="washing_machine_washing_remaining_time"
             ),
             self._create_sensor(
@@ -163,33 +148,16 @@ class WashingMachineDevice(BaseDevice):
             # programme's bits, and reading a phase out of it would be wrong.
             self._create_sensor(
                 coordinator,
-                command_type=(
-                    "0x54" if is_lx128b else self.ENGINEERING_INFO_COMMAND
-                ),
+                command_type=self.ENGINEERING_INFO_COMMAND,
                 name="目前階段",
                 sensor_key="current_stage",
-                data_source=(
-                    "laundry_current_stage" if is_lx128b else "status"
-                ),
                 device_class=SensorDeviceClass.ENUM,
-                options=(
-                    ["washing", "rinsing", "spinning", "drying", "soft_keeping"]
-                    if is_lx128b
-                    else list(WASHING_MACHINE_AVAILABLE_PHASES.values()) + ["finished"]
+                options=list(WASHING_MACHINE_AVAILABLE_PHASES.values()) + ["finished"],
+                value_processor=value_processors.create_pending_phase_processor(
+                    WASHING_MACHINE_AVAILABLE_PHASES
                 ),
-                value_processor=(
-                    None if is_lx128b
-                    else value_processors.create_pending_phase_processor(
-                        WASHING_MACHINE_AVAILABLE_PHASES
-                    )
-                ),
-                gate_command=(
-                    None if is_lx128b else self.OPERATION_STATUS_COMMAND
-                ),
-                gate_allowed=(
-                    None if is_lx128b
-                    else (self.RUNNING_STATUS, self.FINISHED_STATUS)
-                ),
+                gate_command=self.OPERATION_STATUS_COMMAND,
+                gate_allowed=(self.RUNNING_STATUS, self.FINISHED_STATUS),
                 translation_key="washing_machine_current_stage"
             ),
             # How much each dispenser slot is set to dispense. The word is the
@@ -269,18 +237,12 @@ class WashingMachineDevice(BaseDevice):
             self._create_sensor(
                 coordinator,
                 command_type="0x41",
-                name=(
-                    "行程剩餘時間（原乾衣殘時間）"
-                    if is_lx128b else "乾衣殘時間"
-                ),
+                name="乾衣殘時間",
                 sensor_key="drying_remaining_time",
                 device_class=SensorDeviceClass.DURATION,
                 unit=UnitOfTime.MINUTES,
                 data_source="overview_remaining",
-                translation_key=(
-                    "washing_machine_lx128b_programme_remaining_time"
-                    if is_lx128b else "washing_machine_drying_remaining_time"
-                )
+                translation_key="washing_machine_drying_remaining_time"
             ),
             self._create_sensor(
                 coordinator,
@@ -297,17 +259,11 @@ class WashingMachineDevice(BaseDevice):
             self._create_sensor(
                 coordinator,
                 command_type="0x41",
-                name=(
-                    "行程預計完成時間" if is_lx128b else "乾衣預計完成時間"
-                ),
+                name="乾衣預計完成時間",
                 sensor_key="drying_expected_finish",
                 device_class=SensorDeviceClass.TIMESTAMP,
                 data_source="overview_eta",
-                translation_key=(
-                    "washing_machine_lx128b_programme_expected_finish"
-                    if is_lx128b
-                    else "washing_machine_drying_expected_finish"
-                ),
+                translation_key="washing_machine_drying_expected_finish",
             ),
             self._create_sensor(
                 coordinator,
@@ -360,23 +316,6 @@ class WashingMachineDevice(BaseDevice):
                 translation_key="washing_machine_overview_20",
             ),
         ]
-        # These experimental phases are corroborated only for NA-LX128B;
-        # never apply its 0x01/0x50/0x54 interpretations to other models.
-        if is_lx128b:
-            sensors.append(self._create_sensor(
-                coordinator,
-                command_type="0x50",
-                name="洗衣機運轉狀態（實驗性）",
-                sensor_key="laundry_operation_state",
-                data_source="laundry_operation_state",
-                device_class=SensorDeviceClass.ENUM,
-                options=[
-                    "off", "standby", "running", "washing", "rinsing",
-                    "spinning", "drying", "soft_keeping", "paused",
-                ],
-                icon="mdi:washing-machine",
-                translation_key="washing_machine_laundry_operation_state",
-            ))
         return sensors
 
     def get_binary_sensor_entities(self, coordinator) -> List:
