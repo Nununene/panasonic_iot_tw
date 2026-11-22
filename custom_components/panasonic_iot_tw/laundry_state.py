@@ -1,4 +1,4 @@
-"""Experimental read-only NA-LX128B appliance state from live observations.
+"""Read-only NA-LX128B appliance state from live and model metadata.
 
 The codes below are *not* documented by Panasonic. In particular, the
 account-level overview caches each code independently, so a numeric 0x54 in
@@ -190,7 +190,7 @@ def laundry_state_attributes(
     values = device.get("overview_status") or {}
     observed = device.get("overview_observed_at") or {}
     return {
-        "interpretation": "experimental_na_lx128b",
+        "interpretation": "na_lx128b",
         "device_get_info_0x01": status.get("0x01"),
         "device_get_info_0x50": status.get("0x50"),
         "device_get_info_0x54": status.get("0x54"),
