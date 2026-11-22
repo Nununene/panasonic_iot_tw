@@ -11,7 +11,11 @@ from .data_processor import DataProcessor
 from .report_service import ReportService
 from ..base.value_processors import mask_value
 from ..api_constants import API_ENDPOINTS
-from ..const import TRANSIENT_FAILURE_TOLERANCE
+from ..const import (
+    DEVICE_TYPE_WASHING_MACHINE,
+    LX128B_DEVICE_INFO_CODES,
+    TRANSIENT_FAILURE_TOLERANCE,
+)
 from ..exceptions import (
     PanasonicExceedRateLimit,
     PanasonicLoginFailed,
@@ -304,6 +308,17 @@ class SmartApp:
                 _LOGGER.warning("Device type %s has no enabled status codes, using basic status codes", device_type)
                 # Use basic status codes to try to get device information
                 status_codes = ["0x00", "0x50", "0x55"]
+
+            # NA-LX128B (Japanese combo) uses 0x41 minutes and 0x54
+            # phase, rather than 0x13/0x34 used by legacy washers.
+            # Add the extra read-only commands only for this verified model.
+            if (
+                device_type == DEVICE_TYPE_WASHING_MACHINE
+                and str(device.get("model") or "").upper() == "NA-LX128B"
+            ):
+                status_codes = list(dict.fromkeys(
+                    [*status_codes, *LX128B_DEVICE_INFO_CODES]
+                ))
 
             try:
                 # Get device status (per-device tolerance)
