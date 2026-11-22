@@ -10,7 +10,12 @@ from .device_service import DeviceService
 from .data_processor import DataProcessor
 from .report_service import ReportService
 from ..base.value_processors import mask_value
-from ..const import TRANSIENT_FAILURE_TOLERANCE
+from ..api_constants import API_ENDPOINTS
+from ..const import (
+    DEVICE_TYPE_WASHING_MACHINE,
+    LX128B_DEVICE_INFO_CODES,
+    TRANSIENT_FAILURE_TOLERANCE,
+)
 from ..exceptions import (
     PanasonicExceedRateLimit,
     PanasonicLoginFailed,
@@ -187,6 +192,24 @@ class SmartApp:
             _LOGGER.error("Unexpected error during login: %s", e)
             raise
     
+    async def get_laundry_overview(self) -> Dict[str, Any]:
+        """Fetch the read-only account-level status overview for Type 3 devices.
+
+        Callers gate the additional request to laundries and throttle it.
+        The cloud sometimes returns empty Status strings; keep the raw
+        response here and let the coordinator handle freshness.
+        """
+        await self._token_manager.ensure_authenticated()
+        return await self._api_client.request(
+            method="GET",
+            endpoint=API_ENDPOINTS["get_device_overview"],
+            headers={
+                **self._token_manager.get_auth_headers(),
+                "apptype": "Smart",
+            },
+            log=False,
+        )
+
     async def get_devices(self) -> List[Dict[str, Any]]:
         """
         Get device list
@@ -232,7 +255,11 @@ class SmartApp:
                     "Status fetch for %s failed (%d in a row), keeping last known state",
                     data.get("nickname") or mask_value(device_id), failures,
                 )
-                device_data[device_id] = previous
+                # Preserve the last true read timestamp, but mark this
+                # iteration as a cache bridge. Fresh UserGetDeviceStatus
+                # may then be considered without mistaking this old
+                # DeviceGetInfo payload for a newly returned value.
+                device_data[device_id] = {**previous, "status_is_cached": True}
 
     async def get_device_with_info(self, status_codes_dict: Dict[int, List[Union[str, Tuple[str, bool]]]]) -> Dict[str, Dict[str, Any]]:
         """
@@ -282,6 +309,23 @@ class SmartApp:
                 # Use basic status codes to try to get device information
                 status_codes = ["0x00", "0x50", "0x55"]
 
+            # NA-LX128B (Japanese combo) uses 0x41 minutes and 0x54
+            # phase, rather than 0x13/0x34 used by legacy washers.
+            # Add the extra read-only commands only for this verified model.
+            if (
+                device_type == DEVICE_TYPE_WASHING_MACHINE
+                and str(device.get("model") or "").upper() == "NA-LX128B"
+            ):
+                # Omit legacy minute/stage registers that repeatedly
+                # returned -1683.3 on this model. Other washer models
+                # continue to request them as before.
+                status_codes = list(dict.fromkeys([
+                    *(code for code in status_codes if code not in (
+                        "0x05", "0x13", "0x34"
+                    )),
+                    *LX128B_DEVICE_INFO_CODES,
+                ]))
+
             try:
                 # Get device status (per-device tolerance)
                 status = await self._device_service.get_device_status(
@@ -301,6 +345,14 @@ class SmartApp:
                     **device,
                     "status": processed_status.get("status", {}),
                     "available": processed_status.get("available", False),
+                    "status_is_cached": False,
+                    # Timestamp only genuine successful DeviceGetInfo samples;
+                    # the two-poll transient-failure bridge copies this value
+                    # unchanged, so stale minutes are never re-timestamped.
+                    "status_observed_at": (
+                        datetime.now(timezone.utc).isoformat()
+                        if processed_status.get("available", False) else None
+                    ),
                 }
             except Exception as exc:
                 # One device's status fetch failed; keep others and mark this one
@@ -310,6 +362,8 @@ class SmartApp:
                     **device,
                     "status": {},
                     "available": False,
+                    "status_is_cached": False,
+                    "status_observed_at": None,
                 }
 
         self._bridge_transient_device_failures(device_data)

@@ -1,5 +1,6 @@
 """Sensor platform for Panasonic IoT TW integration."""
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional, Callable
 
 from homeassistant.components.sensor import (
@@ -12,6 +13,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .base import PanasonicEntity, PlatformSetupHelper
+from .laundry_overview import (
+    current_expected_finish,
+    current_remaining_minutes,
+    fresh_overview_command,
+    preferred_laundry_command,
+)
+from .laundry_state import laundry_operation_state, laundry_state_attributes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,6 +103,32 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
     def _get_raw_value(self, command_type: str = None) -> Any:
         """Get raw value from data source (override to support special data sources)."""
         try:
+            # The account overview is separate from DeviceGetInfo status.
+            # Each CommandType can independently return an empty string.
+            if self._data_source == "overview":
+                return self._current_device.get("overview_status", {}).get(
+                    command_type or self._command_type
+                )
+            if self._data_source == "overview_remaining":
+                return current_remaining_minutes(
+                    self._current_device, datetime.now(timezone.utc)
+                )
+            if self._data_source == "overview_eta":
+                return current_expected_finish(
+                    self._current_device, datetime.now(timezone.utc)
+                )
+            if self._data_source == "laundry_operation_state":
+                return laundry_operation_state(
+                    self._current_device, datetime.now(timezone.utc)
+                )
+            if self._data_source == "laundry_nanoe_remaining":
+                # 0x4F is a model-defined nanoe minute field, NOT the
+                # programme/phase ETA. Never infer countdown from stale data.
+                value, _ = preferred_laundry_command(
+                    self._current_device, "0x4F", datetime.now(timezone.utc)
+                )
+                return value
+
             # Handle special data sources (energy, CO2, door)
             if self._data_source in ["energy", "co2", "door"]:
                 return self._get_special_data_value()
@@ -149,6 +183,32 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
             raw_value = self._get_special_data_value()
             return raw_value is not None
         
+        # NA-LX128B model-specific sensors may fall back to a fresh
+        # independent Overview response if DeviceGetInfo is unavailable.
+        # Other models keep the existing per-device availability rules.
+        if self._data_source == "laundry_nanoe_remaining":
+            if not self.coordinator.last_update_success:
+                return False
+            value, _ = preferred_laundry_command(
+                self._current_device, "0x4F", datetime.now(timezone.utc)
+            )
+            return value is not None
+        if self._data_source in (
+            "laundry_operation_state", "overview_remaining", "overview_eta"
+        ):
+            if not self.coordinator.last_update_success:
+                return False
+            if self._current_device.get("available", False):
+                return True
+            now = datetime.now(timezone.utc)
+            if fresh_overview_command(
+                self._current_device, "0x50", now
+            ) is None:
+                return False
+            if self._data_source == "laundry_operation_state":
+                return laundry_operation_state(self._current_device, now) is not None
+            return current_expected_finish(self._current_device, now) is not None
+
         # For normal sensors, check if device is available (live data)
         return (
             self.coordinator.last_update_success and
@@ -167,6 +227,49 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
         """Return additional state attributes."""
+        if self._data_source == "laundry_operation_state":
+            return laundry_state_attributes(
+                self._current_device, datetime.now(timezone.utc)
+            )
+        if self._data_source == "laundry_nanoe_remaining":
+            device = self._current_device
+            _, source = preferred_laundry_command(
+                device, "0x4F", datetime.now(timezone.utc)
+            )
+            return {
+                "source": source,
+                "command_type": "0x4F",
+                "last_observed_at": (
+                    device.get("status_observed_at")
+                    if source == "DeviceGetInfo"
+                    else (device.get("overview_observed_at") or {}).get("0x4F")
+                    if source == "UserGetDeviceStatus" else None
+                ),
+                "device_get_info_is_cached": device.get("status_is_cached"),
+            }
+        if self._data_source in ("overview", "overview_remaining", "overview_eta"):
+            device = self._current_device
+            if self._data_source == "overview":
+                observed = device.get("overview_observed_at", {})
+                return {
+                    "source": "UserGetDeviceStatus",
+                    "command_type": self._command_type,
+                    "last_observed_at": observed.get(self._command_type),
+                    "last_request_at": device.get("overview_last_request_at"),
+                }
+            eta_command = device.get("overview_eta_command")
+            return {
+                "source": (
+                    "DeviceGetInfo"
+                    if eta_command == "device_get_info:0x41"
+                    else "UserGetDeviceStatus"
+                ),
+                "source_command": eta_command,
+                "last_observed_at": device.get("overview_eta_observed_at"),
+                "device_get_info_observed_at": device.get("status_observed_at"),
+                "device_get_info_is_cached": device.get("status_is_cached"),
+                "overview_last_request_at": device.get("overview_last_request_at"),
+            }
         if self._extra_state_processor and self._is_gate_open():
             raw_value = self._get_raw_value()
             return self._get_processed_value(raw_value, self._extra_state_processor)
