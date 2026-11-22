@@ -122,13 +122,46 @@ remains experimental despite the model's command metadata.
 
 ## HA entities
 
-- Existing `drying_remaining_time` unique-ID suffix now reads
-  an ETA derived **first from fresh DeviceGetInfo 0x41**, falling back to
-  fresh overview 0x41. The legacy DeviceGetInfo 0x05 returned
-  `-1683.3`. The existing entity ID remains unchanged.
-- New `drying_expected_finish` timestamp entity.
-- Five **diagnostic** raw numeric entities for 0x41, 0x4F, 0x50, 0x54, 0x20,
-  separately identifying their `UserGetDeviceStatus` origin.
+The **NA-LX128B** path now has a compact, model-specific set:
+
+- `programme_remaining_time` (duration, minutes) and
+  `programme_expected_finish` (HA timestamp): a single programme ETA
+  using fresh **DeviceGetInfo `0x41`**, or fresh Overview `0x41`
+  only when direct data is absent or invalid.
+- `laundry_operation_state`: a single experimental HA enum for
+  wash/rinse/spin/dry, anti-crease, pause and supported standby/off
+  scenarios, using fresh direct `0x50/0x54` before Overview fallback.
+- The useful `cycle_message`, dispenser amounts, `0x72/0x73/0x75`
+  diagnostics, `0x19` error code, detergent/softener shortage warnings,
+  and remote-control-allowed binary sensor.
+- Five **diagnostic** raw Overview numeric entities (0x41, 0x4F,
+  0x50, 0x54, 0x20), preserving their distinct cloud origin rather
+  than substituting the preferred merged value.
+
+The legacy `washing_remaining_time` (0x13), `current_stage`
+(0x34 bitfield), `drying_remaining_time` / `drying_expected_finish`
+duplicates, generic `operation_status`, and 0x34-dependent phase
+binary indicators are **not registered for NA-LX128B**. Those old
+registers returned invalid sentinel values or duplicated the new
+per-programme readings. The older `schedule_remaining_time` and
+`drying_error_code` were also omitted from LX128B entities pending
+positive model validation, without claiming their registers cannot
+work in every context. We no longer request invalid LX128B 0x05,
+0x13 or 0x34.
+
+**Other Type 3 washer models are unchanged:** their existing sensor
+IDs, 0x13 minute and 0x34 stage decoding, and binary entities remain
+intact. Additional 0x20/0x41/0x4F/0x54 DeviceGetInfo reads are
+enabled only for verified `Model=NA-LX128B` (not all appliances
+grouped by manufacturing country). This avoids imposing one model's
+register semantics on another.
+
+**Migration after upgrading an existing HA instance:** newly named
+`programme_*` entities have new unique IDs. Update dashboards and
+automations to reference them, and remove any now-orphaned legacy
+NA-LX128B entities from the HA registry as needed. Existing shared
+entities such as `cycle_message`, dispenser amounts and the
+experimental `laundry_operation_state` retain their unique IDs.
 
 Each raw register retains its last valid value and observed timestamp for up to
 15 minutes. Empty strings and invalid sentinels do not mean zero. The ETA
