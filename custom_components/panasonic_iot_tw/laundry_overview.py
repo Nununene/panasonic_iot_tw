@@ -172,30 +172,66 @@ def attach_laundry_overview(
         device["overview_status"] = values
         device["overview_observed_at"] = times
 
-        # A *fresh* stop/finish state overrides any cached estimate.
-        # Two consecutive samples during drying showed 0x50=2 (running).
-        stopped = "0x50" in incoming and incoming["0x50"] != 2
+        # Track DeviceGetInfo observations separately from Overview:
+        # the SmartApp bridge can reuse prior status on two failed polls.
+        # A reused timestamp must not produce a newly calculated ETA.
+        status = device.get("status", {})
+        status_read_time = _read_iso_time(device.get("status_observed_at"))
+        previous_status_read_time = _read_iso_time(before.get("status_observed_at"))
+        device_info_fresh = (
+            device.get("available") is True
+            and status_read_time is not None
+            and status_read_time != previous_status_read_time
+            and _is_recent(status_read_time, now)
+        )
+        device_running = _parse_integer(status.get("0x50")) == 2
+
+        # A fresh stop/finish state from either API overrides cached ETA.
+        stopped = (
+            ("0x50" in incoming and incoming["0x50"] != 2)
+            or (
+                device_info_fresh
+                and _parse_integer(status.get("0x50")) is not None
+                and not device_running
+            )
+        )
         if stopped:
             device["overview_expected_finish_at"] = None
             device["overview_eta_observed_at"] = None
             device["overview_eta_command"] = None
             continue
 
-        # NA-LX128B CommandList metadata identifies 0x41 as
-        # "洗衣殘時間" and 0x4F as "nanoe殘時間".
-        # Their occasional equality during drying does NOT authorize
-        # using nanoe minutes as a whole-programme completion ETA.
-        minutes = incoming.get("0x41")
+        # LX128B schema calls 0x41 "洗衣殘時間" (0..1440 min).
+        # 2026-11-22 dual-API probe found DeviceGetInfo 0x41=150 while
+        # UserGetDeviceStatus 0x41 was blank. Prefer fresh DeviceGetInfo.
+        # 0x4F is nanoe time and NEVER a programme ETA fallback.
+        minutes = None
+        source = None
         if (
-            minutes is not None
-            and 0 <= minutes <= MAX_REMAINING_MINUTES
-            and values.get("0x50") == 2
+            str(device.get("model") or "").upper() == "NA-LX128B"
+            and device_info_fresh
+            and device_running
         ):
+            candidate = _parse_integer(status.get("0x41"))
+            if candidate is not None and 0 <= candidate <= MAX_REMAINING_MINUTES:
+                minutes = candidate
+                source = "device_get_info:0x41"
+        if (
+            minutes is None
+            and "0x41" in incoming
+            and 0 <= incoming["0x41"] <= MAX_REMAINING_MINUTES
+            and values.get("0x50") == 2
+            and device.get("available") is True
+            and device_running
+        ):
+            minutes = incoming["0x41"]
+            source = "0x41"
+        if minutes is not None:
             device["overview_expected_finish_at"] = (
                 now + timedelta(minutes=minutes)
             ).isoformat()
             device["overview_eta_observed_at"] = now.isoformat()
-            device["overview_eta_command"] = "0x41"
+            device["overview_eta_command"] = source
             continue
 
         last_seen = _read_iso_time(before.get("overview_eta_observed_at"))
@@ -204,8 +240,10 @@ def attach_laundry_overview(
             not stopped
             and _is_recent(last_seen, now)
             and last_eta is not None
-            and before.get("overview_eta_command") == "0x41"
-            and values.get("0x50") == 2
+            and before.get("overview_eta_command")
+            in ("0x41", "device_get_info:0x41")
+            and device.get("available") is True
+            and device_running
         ):
             device["overview_expected_finish_at"] = last_eta.isoformat()
             device["overview_eta_observed_at"] = last_seen.isoformat()
@@ -221,7 +259,15 @@ def current_expected_finish(
     device: dict[str, Any], now: datetime
 ) -> datetime | None:
     """Return a time-zone-aware ETA only while its snapshot is recent."""
-    if device.get("overview_status", {}).get("0x50") != 2:
+    if device.get("available") is False:
+        return None
+    # A fresh DeviceGetInfo minute reading may have no corresponding
+    # numeric Overview 0x50: the two cloud APIs are independent.
+    status_running = _parse_integer(
+        (device.get("status") or {}).get("0x50")
+    ) == 2
+    overview_running = device.get("overview_status", {}).get("0x50") == 2
+    if not (status_running or overview_running):
         return None
     observed = _read_iso_time(device.get("overview_eta_observed_at"))
     eta = _read_iso_time(device.get("overview_expected_finish_at"))
