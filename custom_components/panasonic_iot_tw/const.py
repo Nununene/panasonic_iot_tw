@@ -69,6 +69,10 @@ TRANSIENT_FAILURE_TOLERANCE = 2
 # ============================================================================
 # Device Status Codes
 # ============================================================================
+# Only NA-LX128B is currently verified to provide these commands
+# through DeviceGetInfo. Keep legacy washer requests unchanged.
+LX128B_DEVICE_INFO_CODES = ("0x20", "0x41", "0x4F", "0x54")
+
 DEVICE_STATUS_CODES = {
     DEVICE_TYPE_AC: [
         ("0x00", True),   # AC power status
@@ -172,7 +176,7 @@ DEVICE_STATUS_CODES = {
         ("0x4C", False),  # Unknown / Reserved
         ("0x4D", False),  # Unknown / Reserved
         ("0x4E", False),  # Unknown / Reserved
-        ("0x4F", True),   # LX128B schema: nanoe remaining time (raw diagnostic, NOT programme ETA)
+        ("0x4F", False),  # LX128B nanoe minutes requested separately
         ("0x4F", False),  # Unknown / Reserved
         ("0x50", True),   # Defrost setting (normal/defrosting)
         ("0x51", True),   # Packed status bits, meaning not yet decoded; logged for study
@@ -237,10 +241,10 @@ DEVICE_STATUS_CODES = {
         ("0x13", True),   # Washing remaining time (Min=0 Max=599 minutes)
         ("0x15", True),   # Schedule remaining time (Min=0 Max=24 hours)
         ("0x19", True),   # Error code (0=normal; high byte=panel letter, low byte=number)
-        ("0x20", True),   # LX128B direct error/diagnostic command; keep raw until validated
+        ("0x20", False),  # LX128B-specific command requested separately
         ("0x34", True),   # Laundry phase bits: washer 128/64/32/16; dryer 8/4/2
         ("0x40", False),  # Unknown / Reserved
-        ("0x41", True),   # LX128B schema: programme remaining minutes; prefer direct DeviceGetInfo
+        ("0x41", False),  # LX128B programme minutes requested separately
         ("0x44", False),  # Unknown / Reserved
         ("0x45", False),  # Unknown / Reserved
         ("0x46", False),  # Unknown / Reserved
@@ -249,7 +253,7 @@ DEVICE_STATUS_CODES = {
         ("0x4B", False),  # Unknown / Reserved
         ("0x4E", False),  # Unknown / Reserved
         ("0x50", True),   # Operation status: 0-not displayed 1-standby 2-running 3-reserved 4-reserved 5-finished 8-error
-        ("0x54", True),   # LX128B stage: 3 wash, 4 rinse, 5 spin, 6 dry, 11 anti-crease
+        ("0x54", False),  # LX128B programme phase requested separately
         ("0x55", True),   # Cycle message (see WASHING_MACHINE_AVAILABLE_CYCLES for detailed cycle mapping)
         ("0x5A", False),  # Unknown / Reserved
         ("0x5B", False),  # Unknown / Reserved
