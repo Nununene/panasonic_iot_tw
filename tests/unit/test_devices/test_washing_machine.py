@@ -75,7 +75,7 @@ class TestWashingMachineDevice:
         sensors = washing_machine_device.get_sensor_entities(mock_coordinator)
         assert len(sensors) == 19  # Existing washer sensors + ETA and five overview registers
 
-    def test_na_lx128b_has_extra_experimental_operation_state(
+    def test_na_lx128b_has_model_operation_state(
         self, mock_coordinator, mock_device_data
     ):
         """Only the tested combo model gets the additional enum entity."""
@@ -96,6 +96,7 @@ class TestWashingMachineDevice:
         )
         assert state.native_value == "standby"
         assert state.extra_state_attributes["device_get_info_0x01"] == "3"
+        assert state.extra_state_attributes["interpretation"] == "na_lx128b"
 
         # The exact DeviceGetInfo pair 0x01=2, 0x50=7 occurs in
         # BOTH paused and powered-off states. Without a recent overview,
