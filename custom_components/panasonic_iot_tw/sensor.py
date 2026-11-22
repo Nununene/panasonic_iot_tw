@@ -17,6 +17,7 @@ from .laundry_overview import (
     current_expected_finish,
     current_remaining_minutes,
     fresh_overview_command,
+    preferred_laundry_command,
 )
 from .laundry_state import laundry_operation_state, laundry_state_attributes
 
@@ -120,16 +121,13 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
                 return laundry_operation_state(
                     self._current_device, datetime.now(timezone.utc)
                 )
-            if self._data_source == "laundry_current_stage":
-                # NA-LX128B only: preserve the existing current_stage entity
-                # ID, but use the fresh DeviceGetInfo 0x54 with Overview
-                # fallback rather than the unsupported 0x34 bitfield.
-                phase = laundry_operation_state(
-                    self._current_device, datetime.now(timezone.utc)
+            if self._data_source == "laundry_nanoe_remaining":
+                # 0x4F is a model-defined nanoe minute field, NOT the
+                # programme/phase ETA. Never infer countdown from stale data.
+                value, _ = preferred_laundry_command(
+                    self._current_device, "0x4F", datetime.now(timezone.utc)
                 )
-                return phase if phase in (
-                    "washing", "rinsing", "spinning", "drying", "soft_keeping"
-                ) else None
+                return value
 
             # Handle special data sources (energy, CO2, door)
             if self._data_source in ["energy", "co2", "door"]:
@@ -185,13 +183,18 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
             raw_value = self._get_special_data_value()
             return raw_value is not None
         
-        # For the NA-LX128B experimental entities, the independently
-        # successful Overview GET may continue to provide live readings
-        # while DeviceGetInfo has no data. Other existing entities keep
-        # the ordinary per-device availability policy unchanged.
+        # NA-LX128B model-specific sensors may fall back to a fresh
+        # independent Overview response if DeviceGetInfo is unavailable.
+        # Other models keep the existing per-device availability rules.
+        if self._data_source == "laundry_nanoe_remaining":
+            if not self.coordinator.last_update_success:
+                return False
+            value, _ = preferred_laundry_command(
+                self._current_device, "0x4F", datetime.now(timezone.utc)
+            )
+            return value is not None
         if self._data_source in (
-            "laundry_operation_state", "laundry_current_stage",
-            "overview_remaining", "overview_eta"
+            "laundry_operation_state", "overview_remaining", "overview_eta"
         ):
             if not self.coordinator.last_update_success:
                 return False
@@ -202,16 +205,8 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
                 self._current_device, "0x50", now
             ) is None:
                 return False
-            if self._data_source in (
-                "laundry_operation_state", "laundry_current_stage"
-            ):
-                state = laundry_operation_state(self._current_device, now)
-                if self._data_source == "laundry_current_stage":
-                    return state in (
-                        "washing", "rinsing", "spinning", "drying",
-                        "soft_keeping"
-                    )
-                return state is not None
+            if self._data_source == "laundry_operation_state":
+                return laundry_operation_state(self._current_device, now) is not None
             return current_expected_finish(self._current_device, now) is not None
 
         # For normal sensors, check if device is available (live data)
@@ -236,6 +231,22 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
             return laundry_state_attributes(
                 self._current_device, datetime.now(timezone.utc)
             )
+        if self._data_source == "laundry_nanoe_remaining":
+            device = self._current_device
+            _, source = preferred_laundry_command(
+                device, "0x4F", datetime.now(timezone.utc)
+            )
+            return {
+                "source": source,
+                "command_type": "0x4F",
+                "last_observed_at": (
+                    device.get("status_observed_at")
+                    if source == "DeviceGetInfo"
+                    else (device.get("overview_observed_at") or {}).get("0x4F")
+                    if source == "UserGetDeviceStatus" else None
+                ),
+                "device_get_info_is_cached": device.get("status_is_cached"),
+            }
         if self._data_source in ("overview", "overview_remaining", "overview_eta"):
             device = self._current_device
             if self._data_source == "overview":
