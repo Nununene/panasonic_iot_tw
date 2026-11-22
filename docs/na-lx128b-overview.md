@@ -122,16 +122,60 @@ remains experimental despite the model's command metadata.
 
 ## HA entities
 
+### Model-specific `0x4F` nanoe minutes and official `0x55` cycle enum
+
+The 2022-04-18 `UserGetRegisteredGwList2` LX128B `CommandList`
+defines `0x4F` as **nanoe殘時間** (range 0..1440 **minutes**).
+The `nanoe_remaining_time` sensor now reports only a **fresh**
+`DeviceGetInfo 0x4F` reading, falling back to the most recent
+verified numeric `UserGetDeviceStatus 0x4F` if direct data is
+missing, invalid, stale, or carried across a failed DeviceGetInfo poll.
+It preserves valid zero but does not fabricate a zero on missing
+readings. The entity reports the selected source and observation time.
+Because `0x4F` was also 14 while the user ran a wash cycle, the
+label describes a **vendor-defined field**, NOT proof that nanoe
+is actively running. It must not be used to calculate the
+overall programme finish time (`0x41` only).
+
+The cloud metadata also defines a **14-entry `0x55` 行程別訊息**
+enum, different from the generic washer map:
+`0=標準行程`, `2=加強行程`, `5=高級衣行程`,
+`8=浸泡行程`, `10=快洗行程`, `11=槽洗淨行程`,
+`13=大件行程`, `16=夜靜行程`,
+`18=溫水去污標準行程`, `19=溫水去污加強行程`,
+`20=中溫除臭行程`, `21=高溫抑菌行程`,
+`22=溫泡洗行程`, `23=溫水槽洗淨行程`.
+The existing `cycle_message` sensor unique ID is unchanged, but
+NA-LX128B now uses its **own enum and translation key**. In
+particular, the generic washer treats `18` as `custom`, which
+would be wrong on LX128B. Unlisted values remain unknown,
+not guessed. Other washer models retain their existing
+`WASHING_MACHINE_AVAILABLE_CYCLES` mapping.
+
+Finally, the user has selected `laundry_operation_state` as the
+**single** NA-LX128B current-phase/operation entity, with the display
+name **洗衣機運轉狀態** (no `（實驗性）` suffix).
+There is intentionally **no new `current_stage` entity** for LX128B:
+its earlier `0x34`-decoded `current_stage` is no longer provided
+by this model path. After updating an existing HA installation,
+the previously registered `current_stage` may remain as an
+**orphaned unavailable** registry entity until removed in the UI.
+Do not replace it with another duplicate phase sensor. The
+live-data mappings for pause/off and end-of-cycle still carry
+the validation cautions documented in the operation-state study.
+
 The **NA-LX128B** path now has a compact, model-specific set:
 
 - `programme_remaining_time` (duration, minutes) and
   `programme_expected_finish` (HA timestamp): a single programme ETA
   using fresh **DeviceGetInfo `0x41`**, or fresh Overview `0x41`
   only when direct data is absent or invalid.
-- `laundry_operation_state`: a single experimental HA enum for
+- `laundry_operation_state`: a single user-facing HA enum for
   wash/rinse/spin/dry, anti-crease, pause and supported standby/off
   scenarios, using fresh direct `0x50/0x54` before Overview fallback.
-- The useful `cycle_message`, dispenser amounts, `0x72/0x73/0x75`
+- `nanoe_remaining_time` (DeviceGetInfo 0x4F with fresh Overview backup),
+  model-specific `cycle_message` with official `0x55` labels,
+  dispenser amounts, `0x72/0x73/0x75`
   diagnostics, `0x19` error code, detergent/softener shortage warnings,
   and remote-control-allowed binary sensor.
 - Five **diagnostic** raw Overview numeric entities (0x41, 0x4F,
