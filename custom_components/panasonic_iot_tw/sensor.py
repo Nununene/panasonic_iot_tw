@@ -13,7 +13,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .base import PanasonicEntity, PlatformSetupHelper
-from .laundry_overview import current_expected_finish, current_remaining_minutes
+from .laundry_overview import (
+    current_expected_finish,
+    current_remaining_minutes,
+    fresh_overview_command,
+)
 from .laundry_state import laundry_operation_state, laundry_state_attributes
 
 _LOGGER = logging.getLogger(__name__)
@@ -171,6 +175,26 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
             raw_value = self._get_special_data_value()
             return raw_value is not None
         
+        # For the NA-LX128B experimental entities, the independently
+        # successful Overview GET may continue to provide live readings
+        # while DeviceGetInfo has no data. Other existing entities keep
+        # the ordinary per-device availability policy unchanged.
+        if self._data_source in (
+            "laundry_operation_state", "overview_remaining", "overview_eta"
+        ):
+            if not self.coordinator.last_update_success:
+                return False
+            if self._current_device.get("available", False):
+                return True
+            now = datetime.now(timezone.utc)
+            if fresh_overview_command(
+                self._current_device, "0x50", now
+            ) is None:
+                return False
+            if self._data_source == "laundry_operation_state":
+                return laundry_operation_state(self._current_device, now) is not None
+            return current_expected_finish(self._current_device, now) is not None
+
         # For normal sensors, check if device is available (live data)
         return (
             self.coordinator.last_update_success and
@@ -203,11 +227,18 @@ class PanasonicSensor(PanasonicEntity, SensorEntity):
                     "last_observed_at": observed.get(self._command_type),
                     "last_request_at": device.get("overview_last_request_at"),
                 }
+            eta_command = device.get("overview_eta_command")
             return {
-                "source": "UserGetDeviceStatus",
-                "source_command": device.get("overview_eta_command"),
+                "source": (
+                    "DeviceGetInfo"
+                    if eta_command == "device_get_info:0x41"
+                    else "UserGetDeviceStatus"
+                ),
+                "source_command": eta_command,
                 "last_observed_at": device.get("overview_eta_observed_at"),
-                "last_request_at": device.get("overview_last_request_at"),
+                "device_get_info_observed_at": device.get("status_observed_at"),
+                "device_get_info_is_cached": device.get("status_is_cached"),
+                "overview_last_request_at": device.get("overview_last_request_at"),
             }
         if self._extra_state_processor and self._is_gate_open():
             raw_value = self._get_raw_value()
