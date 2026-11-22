@@ -9,6 +9,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
+from .laundry_overview import (
+    fresh_device_info_command,
+    fresh_overview_command,
+    preferred_laundry_command,
+)
+
 # Slightly longer than the usual 3-minute overview poll, but not the entire
 # 15-minute numeric-cache lifetime. A stage is reported only if BOTH codes
 # came from the same most recent successful overview response.
@@ -67,38 +73,39 @@ def _latest_overview_operation(device: dict[str, Any], now: datetime) -> tuple[s
     return ("numeric", value) if value is not None else (None, None)
 
 
-def _confirmed_phase(device: dict[str, Any], now: datetime) -> int | None:
-    """Use 0x54 only when it and overview 0x50 are from this same live read."""
-    # Even a matching overview pair must never be treated as the current phase
-    # if DeviceGetInfo now reports off, standby or paused.
-    status = device.get("status") or {}
-    if _code_int(status.get("0x01")) == 2 or _code_int(
-        status.get("0x50")
-    ) != 2:
-        return None
-    summary = device.get("overview_last_response_summary") or {}
-    if summary.get("result") != "matched":
-        return None
-    commands = summary.get("commands") or {}
-    if commands.get("0x50") != "numeric" or commands.get("0x54") != "numeric":
-        return None
+def _current_operation(
+    device: dict[str, Any], now: datetime,
+) -> tuple[int | None, str | None]:
+    """Use current direct status first, then fresh Overview 0x50.
 
-    latest = _timestamp(device.get("overview_last_response_at"))
-    observed = device.get("overview_observed_at") or {}
-    time_50 = _timestamp(observed.get("0x50"))
-    time_54 = _timestamp(observed.get("0x54"))
+    Older synthetic tests and pre-upgrade snapshots have no freshness
+    marker. Only those legacy cases keep the historical raw-status path.
+    Real coordinator polls always have status_observed_at/status_is_cached.
+    """
+    direct = fresh_device_info_command(device, "0x50", now)
+    if direct is not None:
+        return direct, "DeviceGetInfo"
     if (
-        latest is None
-        or time_50 != latest
-        or time_54 != latest
-        or not timedelta(0) <= now - latest <= PHASE_FRESHNESS
+        "status_observed_at" not in device
+        and "status_is_cached" not in device
     ):
-        return None
+        legacy = _code_int((device.get("status") or {}).get("0x50"))
+        if legacy is not None:
+            return legacy, "DeviceGetInfo (legacy)"
+    return preferred_laundry_command(device, "0x50", now)
 
-    values = device.get("overview_status") or {}
-    if _code_int(values.get("0x50")) != 2:
+
+def _confirmed_phase(device: dict[str, Any], now: datetime) -> int | None:
+    """Select live 0x54: DeviceGetInfo first, Overview second."""
+    # Power 0x01=2 can mean paused or off; never claim an active phase.
+    status = device.get("status") or {}
+    if _code_int(status.get("0x01")) == 2:
         return None
-    return _code_int(values.get("0x54"))
+    operation, _ = _current_operation(device, now)
+    if operation != 2:
+        return None
+    phase, _ = preferred_laundry_command(device, "0x54", now)
+    return phase
 
 
 def laundry_operation_state(
@@ -110,20 +117,31 @@ def laundry_operation_state(
     0x50=7 too, a *fresh* numeric overview 0x50=7 means pause; an empty
     latest overview 0x50 is a tentative powered-off signal. Unknown/old
     cloud data must not be mistaken for a confirmed powered-off state.
-    For running programmes, extra 0x54 stages are shown only with synchronized
-    numeric overview readings; otherwise fall back to generic 'running'.
+    For running programmes, prefer fresh DeviceGetInfo 0x54; if it is
+    missing/invalid/stale, use a fresh numeric UserGetDeviceStatus 0x54.
+    Stale cached values from either endpoint are not active stages.
     """
     if str(device.get("model") or "").upper() != "NA-LX128B":
         return None
 
     status = device.get("status") or {}
     power = _code_int(status.get("0x01"))
-    operation = _code_int(status.get("0x50"))
-    if power == 2 and operation == 7:
+    raw_operation = _code_int(status.get("0x50"))
+    operation, _ = _current_operation(device, now)
+    if power == 2 and raw_operation == 7:
         # Real pause sample: 0x01=2 AND DeviceGetInfo 0x50=7, while the
         # latest UserGetDeviceStatus GET returns a new numeric 0x50=7.
         # After power-off both DeviceGetInfo values persist but a new GET
         # returned an empty overview 0x50, leaving cached 7 behind.
+        # A bridged or expired DGI snapshot does not prove present
+        # power state. Keep pause/off distinction conservative.
+        if device.get("status_is_cached") is True:
+            return None
+        if (
+            "status_observed_at" in device
+            and fresh_device_info_command(device, "0x50", now) != 7
+        ):
+            return None
         overview_kind, overview_value = _latest_overview_operation(device, now)
         if overview_kind == "numeric" and overview_value == 7:
             return "paused"
@@ -169,6 +187,14 @@ def laundry_state_attributes(
         "interpretation": "experimental_na_lx128b",
         "device_get_info_0x01": status.get("0x01"),
         "device_get_info_0x50": status.get("0x50"),
+        "device_get_info_0x54": status.get("0x54"),
+        "device_get_info_observed_at": device.get("status_observed_at"),
+        "device_get_info_is_cached": device.get("status_is_cached"),
+        "effective_0x50_source": _current_operation(device, now)[1],
+        "effective_0x54_source": (
+            preferred_laundry_command(device, "0x54", now)[1]
+            if _confirmed_phase(device, now) is not None else None
+        ),
         "overview_0x50": values.get("0x50"),
         "overview_0x54": values.get("0x54"),
         "overview_0x50_observed_at": observed.get("0x50"),
