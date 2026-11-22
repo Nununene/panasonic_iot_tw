@@ -453,7 +453,53 @@ class WashingMachineDevice(BaseDevice):
         return sensors
 
     def get_binary_sensor_entities(self, coordinator) -> List:
-        """Return binary sensor entities for washing machine."""
+        """Remove unsupported 0x34-based phase flags only on NA-LX128B.
+
+        The existing per-stage binaries remain unchanged for other washers.
+        LX128B already provides an independently tested operation enum.
+        """
+        common = [
+            # Detergent tank low (high byte of the dispenser register). Silent
+            # while the detergent slot is not in use.
+            self._create_binary_sensor(
+                coordinator,
+                command_type=self.DISPENSER_COMMAND,
+                name="洗衣劑不足",
+                sensor_key="detergent_low",
+                device_class=BinarySensorDeviceClass.PROBLEM,
+                bit_mask=self.DETERGENT_LOW_BIT,
+                gate_command=self.DISPENSER_SETTING_COMMAND,
+                gate_when=value_processors.dispenser_has_detergent,
+                translation_key="washing_machine_detergent_low"
+            ),
+            # Softener tank low (low byte of the same register, which the app
+            # decodes as a second warning flag; 0x0101 = both tanks low).
+            # Silent while the softener slot is not in use, which is how the
+            # vendor app behaves too.
+            self._create_binary_sensor(
+                coordinator,
+                command_type=self.DISPENSER_COMMAND,
+                name="柔軟劑不足",
+                sensor_key="softener_low",
+                device_class=BinarySensorDeviceClass.PROBLEM,
+                bit_mask=self.SOFTENER_LOW_BIT,
+                gate_command=self.DISPENSER_SETTING_COMMAND,
+                gate_when=value_processors.dispenser_has_softener,
+                translation_key="washing_machine_softener_low"
+            ),
+            # Remote control allowance
+            self._create_binary_sensor(
+                coordinator,
+                command_type=self.REMOTE_CONTROL_COMMAND,
+                name="遠端控制允許",
+                sensor_key="remote_control_allowed",
+                value_processor=value_processors.process_remote_control,
+                entity_category=EntityCategory.DIAGNOSTIC,
+                translation_key="washing_machine_remote_control_allowed"
+            ),
+        ]
+        if str(self.model).upper() == "NA-LX128B":
+            return common
         return [
             # Engineering info 0x34 marks the phases that have NOT finished
             # yet, so these report the phase being run right now instead of
@@ -516,44 +562,7 @@ class WashingMachineDevice(BaseDevice):
                 translation_key="washing_machine_spinning_status",
                 entity_registry_enabled_default=False
             ),
-            # Detergent tank low (high byte of the dispenser register). Silent
-            # while the detergent slot is not in use.
-            self._create_binary_sensor(
-                coordinator,
-                command_type=self.DISPENSER_COMMAND,
-                name="洗衣劑不足",
-                sensor_key="detergent_low",
-                device_class=BinarySensorDeviceClass.PROBLEM,
-                bit_mask=self.DETERGENT_LOW_BIT,
-                gate_command=self.DISPENSER_SETTING_COMMAND,
-                gate_when=value_processors.dispenser_has_detergent,
-                translation_key="washing_machine_detergent_low"
-            ),
-            # Softener tank low (low byte of the same register, which the app
-            # decodes as a second warning flag; 0x0101 = both tanks low).
-            # Silent while the softener slot is not in use, which is how the
-            # vendor app behaves too.
-            self._create_binary_sensor(
-                coordinator,
-                command_type=self.DISPENSER_COMMAND,
-                name="柔軟劑不足",
-                sensor_key="softener_low",
-                device_class=BinarySensorDeviceClass.PROBLEM,
-                bit_mask=self.SOFTENER_LOW_BIT,
-                gate_command=self.DISPENSER_SETTING_COMMAND,
-                gate_when=value_processors.dispenser_has_softener,
-                translation_key="washing_machine_softener_low"
-            ),
-            # Remote control allowance
-            self._create_binary_sensor(
-                coordinator,
-                command_type=self.REMOTE_CONTROL_COMMAND,
-                name="遠端控制允許",
-                sensor_key="remote_control_allowed",
-                value_processor=value_processors.process_remote_control,
-                entity_category=EntityCategory.DIAGNOSTIC,
-                translation_key="washing_machine_remote_control_allowed"
-            ),
+        ] + common + [
             # Dryer phases share engineering register 0x34 with washer phases.
             self._create_binary_sensor(
                 coordinator,
@@ -598,4 +607,3 @@ class WashingMachineDevice(BaseDevice):
                 entity_registry_enabled_default=False
             )
         ]
-    
