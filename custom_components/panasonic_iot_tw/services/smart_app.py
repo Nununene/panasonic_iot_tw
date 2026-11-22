@@ -320,6 +320,13 @@ class SmartApp:
                     **device,
                     "status": processed_status.get("status", {}),
                     "available": processed_status.get("available", False),
+                    # Timestamp only genuine successful DeviceGetInfo samples;
+                    # the two-poll transient-failure bridge copies this value
+                    # unchanged, so stale minutes are never re-timestamped.
+                    "status_observed_at": (
+                        datetime.now(timezone.utc).isoformat()
+                        if processed_status.get("available", False) else None
+                    ),
                 }
             except Exception as exc:
                 # One device's status fetch failed; keep others and mark this one
@@ -329,6 +336,7 @@ class SmartApp:
                     **device,
                     "status": {},
                     "available": False,
+                    "status_observed_at": None,
                 }
 
         self._bridge_transient_device_failures(device_data)
