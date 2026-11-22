@@ -282,6 +282,12 @@
           "more": "較多"
         }
       },
+      "washing_machine_lx128b_programme_remaining_time": {
+        "name": "行程剩餘時間"
+      },
+      "washing_machine_lx128b_programme_expected_finish": {
+        "name": "行程預計完成時間"
+      },
       "washing_machine_drying_remaining_time": {
         "name": "乾衣殘時間"
       },
