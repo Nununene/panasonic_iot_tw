@@ -40,6 +40,93 @@ def _payload(statuses):
     }
 
 
+def test_real_dual_api_sample_prefers_fresh_device_info_41():
+    # Captured 2026-11-22 08:17 Taipei:
+    # Overview 0x41/0x50/0x54 are all "", but direct DeviceGetInfo
+    # returned 0x41=150, 0x4F=14, 0x50=2, 0x54=3.
+    # 0x4F must not affect the programme ETA.
+    device_data = _device_data()
+    washer = device_data["laundry"]
+    washer["model"] = "NA-LX128B"
+    washer["status"] = {"0x01": "1", "0x41": "150", "0x4F": "14", "0x50": "2", "0x54": "3"}
+    washer["status_observed_at"] = START.isoformat()
+    payload = _payload({
+        "0x41": "", "0x4F": "", "0x50": "", "0x54": "", "0x20": ""
+    })
+    result = attach_laundry_overview(device_data, None, payload, START)
+    actual = result["laundry"]
+    assert actual["overview_status"] == {}
+    assert actual["overview_eta_command"] == "device_get_info:0x41"
+    assert current_remaining_minutes(actual, START) == 150
+    assert current_expected_finish(actual, START) == START + timedelta(minutes=150)
+
+
+def test_failed_device_info_poll_does_not_restart_41_countdown():
+    initial = _device_data()
+    initial["laundry"].update({
+        "model": "NA-LX128B",
+        "status": {"0x41": "150", "0x50": "2"},
+        "status_observed_at": START.isoformat(),
+    })
+    blank = _payload({"0x41": "", "0x50": "", "0x54": ""})
+    first = attach_laundry_overview(initial, None, blank, START)
+    next_time = START + timedelta(minutes=3)
+    bridged = _device_data()
+    bridged["laundry"].update({
+        "model": "NA-LX128B",
+        "status": {"0x41": "150", "0x50": "2"},
+        # Status timestamp copied from failed poll's last-good-data bridge.
+        "status_observed_at": START.isoformat(),
+    })
+    result = attach_laundry_overview(bridged, first, blank, next_time)
+    actual = result["laundry"]
+    assert actual["overview_eta_command"] == "device_get_info:0x41"
+    assert current_remaining_minutes(actual, next_time) == 147
+    assert current_expected_finish(actual, next_time) == (
+        START + timedelta(minutes=150)
+    )
+
+
+def test_device_info_41_ignores_sentinel_and_does_not_use_nanoe_4f():
+    device_data = _device_data()
+    device_data["laundry"].update({
+        "model": "NA-LX128B",
+        "status": {"0x41": "-1683.3", "0x4F": "14", "0x50": "2"},
+        "status_observed_at": START.isoformat(),
+    })
+    actual = attach_laundry_overview(
+        device_data, None,
+        _payload({"0x41": "", "0x4F": "", "0x50": ""}), START
+    )["laundry"]
+    assert actual["overview_eta_command"] is None
+    assert current_remaining_minutes(actual, START) is None
+
+
+def test_device_info_fresh_standby_clears_previous_eta():
+    first_data = _device_data()
+    first_data["laundry"].update({
+        "model": "NA-LX128B",
+        "status": {"0x41": "120", "0x50": "2"},
+        "status_observed_at": START.isoformat(),
+    })
+    first = attach_laundry_overview(
+        first_data, None, _payload({"0x41": "", "0x50": ""}), START
+    )
+    next_time = START + timedelta(minutes=3)
+    standby = _device_data()
+    standby["laundry"].update({
+        "model": "NA-LX128B",
+        "status": {"0x41": "", "0x50": "1"},
+        "status_observed_at": next_time.isoformat(),
+    })
+    result = attach_laundry_overview(
+        standby, first, _payload({"0x41": "", "0x50": ""}), next_time
+    )
+    actual = result["laundry"]
+    assert actual["overview_eta_command"] is None
+    assert current_expected_finish(actual, next_time) is None
+
+
 def test_decoding_keeps_independent_registers_without_empty_as_zero():
     readings = decode_overview(_payload({
         "0x41": "", "0x4F": None, "0x50": "2",
