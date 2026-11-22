@@ -282,6 +282,12 @@
           "more": "More"
         }
       },
+      "washing_machine_lx128b_programme_remaining_time": {
+        "name": "Programme Remaining Time"
+      },
+      "washing_machine_lx128b_programme_expected_finish": {
+        "name": "Programme Expected Finish"
+      },
       "washing_machine_drying_remaining_time": {
         "name": "Drying Remaining Time"
       },
