@@ -128,6 +128,78 @@ def _is_recent(when: datetime | None, now: datetime) -> bool:
     return when is not None and timedelta(0) <= now - when <= OVERVIEW_FRESHNESS
 
 
+# A source is only eligible when its own latest reading is recent.
+# This is deliberately shorter than the separately bounded ETA cache.
+STATUS_SOURCE_FRESHNESS = timedelta(minutes=5)
+
+
+def _command_value(raw: Any, command: str) -> int | None:
+    """Discard blanks, API sentinels and values invalid for this code."""
+    value = _parse_integer(raw)
+    if value is None or value < 0:
+        return None
+    if command == "0x50" and value not in (0, 1, 2, 3, 4, 5, 7, 8):
+        return None
+    if command == "0x54" and value not in (1, 2, 3, 4, 5, 6, 9, 11):
+        return None
+    if command in ("0x41", "0x4F") and value > MAX_REMAINING_MINUTES:
+        return None
+    return value
+
+
+def fresh_device_info_command(
+    device: dict[str, Any], command: str, now: datetime,
+) -> int | None:
+    """Return a fresh DeviceGetInfo value, never a bridged/cache value."""
+    stamp = _read_iso_time(device.get("status_observed_at"))
+    if (
+        device.get("available") is not True
+        or device.get("status_is_cached") is True
+        or stamp is None
+        or not timedelta(0) <= now - stamp <= STATUS_SOURCE_FRESHNESS
+    ):
+        return None
+    return _command_value((device.get("status") or {}).get(command), command)
+
+
+def fresh_overview_command(
+    device: dict[str, Any], command: str, now: datetime,
+) -> int | None:
+    """Return only a verified numeric value from the latest overview GET."""
+    summary = device.get("overview_last_response_summary") or {}
+    if (
+        summary.get("result") != "matched"
+        or (summary.get("commands") or {}).get(command) != "numeric"
+    ):
+        return None
+    latest = _read_iso_time(device.get("overview_last_response_at"))
+    observed = _read_iso_time(
+        (device.get("overview_observed_at") or {}).get(command)
+    )
+    if (
+        latest is None
+        or observed != latest
+        or not timedelta(0) <= now - latest <= STATUS_SOURCE_FRESHNESS
+    ):
+        return None
+    return _command_value(
+        (device.get("overview_status") or {}).get(command), command
+    )
+
+
+def preferred_laundry_command(
+    device: dict[str, Any], command: str, now: datetime,
+) -> tuple[int | None, str | None]:
+    """DeviceGetInfo first; fall back to fresh UserGetDeviceStatus only."""
+    direct = fresh_device_info_command(device, command, now)
+    if direct is not None:
+        return direct, "DeviceGetInfo"
+    overview = fresh_overview_command(device, command, now)
+    if overview is not None:
+        return overview, "UserGetDeviceStatus"
+    return None, None
+
+
 def attach_laundry_overview(
     devices: dict[str, dict[str, Any]],
     previous: dict[str, dict[str, Any]] | None,
@@ -172,60 +244,36 @@ def attach_laundry_overview(
         device["overview_status"] = values
         device["overview_observed_at"] = times
 
-        # Track DeviceGetInfo observations separately from Overview:
-        # the SmartApp bridge can reuse prior status on two failed polls.
-        # A reused timestamp must not produce a newly calculated ETA.
-        status = device.get("status", {})
-        status_read_time = _read_iso_time(device.get("status_observed_at"))
-        previous_status_read_time = _read_iso_time(before.get("status_observed_at"))
-        device_info_fresh = (
-            device.get("available") is True
-            and status_read_time is not None
-            and status_read_time != previous_status_read_time
-            and _is_recent(status_read_time, now)
+        # Per-command source precedence, including a stop signal:
+        # a current DeviceGetInfo 0x50 overrides a contradictory Overview
+        # 0x50. A bridged/expired DeviceGetInfo value never takes priority.
+        direct_operation = fresh_device_info_command(device, "0x50", now)
+        live_operation = (
+            direct_operation if direct_operation is not None
+            else _command_value(incoming.get("0x50"), "0x50")
         )
-        device_running = _parse_integer(status.get("0x50")) == 2
-
-        # A fresh stop/finish state from either API overrides cached ETA.
-        stopped = (
-            ("0x50" in incoming and incoming["0x50"] != 2)
-            or (
-                device_info_fresh
-                and _parse_integer(status.get("0x50")) is not None
-                and not device_running
-            )
-        )
+        stopped = live_operation is not None and live_operation != 2
         if stopped:
             device["overview_expected_finish_at"] = None
             device["overview_eta_observed_at"] = None
             device["overview_eta_command"] = None
             continue
 
-        # LX128B schema calls 0x41 "洗衣殘時間" (0..1440 min).
-        # 2026-11-22 dual-API probe found DeviceGetInfo 0x41=150 while
-        # UserGetDeviceStatus 0x41 was blank. Prefer fresh DeviceGetInfo.
-        # 0x4F is nanoe time and NEVER a programme ETA fallback.
+        # LX128B schema calls 0x41 洗衣殘時間, 0x4F nanoe殘時間.
+        # On 2026-11-22, direct 0x41=150 while overview 0x41="".
+        # Prefer a fresh direct reading, then this response's fresh
+        # overview 0x41. NEVER derive programme ETA from nanoe 0x4F.
         minutes = None
         source = None
-        if (
-            str(device.get("model") or "").upper() == "NA-LX128B"
-            and device_info_fresh
-            and device_running
-        ):
-            candidate = _parse_integer(status.get("0x41"))
-            if candidate is not None and 0 <= candidate <= MAX_REMAINING_MINUTES:
-                minutes = candidate
-                source = "device_get_info:0x41"
-        if (
-            minutes is None
-            and "0x41" in incoming
-            and 0 <= incoming["0x41"] <= MAX_REMAINING_MINUTES
-            and values.get("0x50") == 2
-            and device.get("available") is True
-            and device_running
-        ):
-            minutes = incoming["0x41"]
-            source = "0x41"
+        if live_operation == 2:
+            if str(device.get("model") or "").upper() == "NA-LX128B":
+                minutes = fresh_device_info_command(device, "0x41", now)
+                if minutes is not None:
+                    source = "device_get_info:0x41"
+            if minutes is None:
+                minutes = _command_value(incoming.get("0x41"), "0x41")
+                if minutes is not None:
+                    source = "0x41"
         if minutes is not None:
             device["overview_expected_finish_at"] = (
                 now + timedelta(minutes=minutes)
@@ -242,8 +290,15 @@ def attach_laundry_overview(
             and last_eta is not None
             and before.get("overview_eta_command")
             in ("0x41", "device_get_info:0x41")
-            and device.get("available") is True
-            and device_running
+            and (
+                live_operation == 2
+                or (
+                    live_operation is None
+                    and device.get("available") is True
+                    and (device.get("status") or {}).get("0x50") == "2"
+                    and device.get("status_is_cached") is not True
+                )
+            )
         ):
             device["overview_expected_finish_at"] = last_eta.isoformat()
             device["overview_eta_observed_at"] = last_seen.isoformat()
@@ -259,16 +314,19 @@ def current_expected_finish(
     device: dict[str, Any], now: datetime
 ) -> datetime | None:
     """Return a time-zone-aware ETA only while its snapshot is recent."""
-    if device.get("available") is False:
+    # This minute estimate may remain usable when only Overview is live,
+    # even if DeviceGetInfo is temporarily unavailable.
+    operation, _ = preferred_laundry_command(device, "0x50", now)
+    source = device.get("overview_eta_command")
+    if operation is not None and operation != 2:
         return None
-    # A fresh DeviceGetInfo minute reading may have no corresponding
-    # numeric Overview 0x50: the two cloud APIs are independent.
-    status_running = _parse_integer(
-        (device.get("status") or {}).get("0x50")
-    ) == 2
-    overview_running = device.get("overview_status", {}).get("0x50") == 2
-    if not (status_running or overview_running):
-        return None
+    if operation is None:
+        # The 15-minute ETA cache is a bounded holdover, not a new read.
+        # Never expose that holdover after the device is unavailable.
+        if device.get("available") is False:
+            return None
+        if source not in ("0x41", "device_get_info:0x41"):
+            return None
     observed = _read_iso_time(device.get("overview_eta_observed_at"))
     eta = _read_iso_time(device.get("overview_expected_finish_at"))
     if not _is_recent(observed, now) or eta is None:
