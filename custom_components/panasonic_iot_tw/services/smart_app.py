@@ -316,9 +316,15 @@ class SmartApp:
                 device_type == DEVICE_TYPE_WASHING_MACHINE
                 and str(device.get("model") or "").upper() == "NA-LX128B"
             ):
-                status_codes = list(dict.fromkeys(
-                    [*status_codes, *LX128B_DEVICE_INFO_CODES]
-                ))
+                # Omit legacy minute/stage registers that repeatedly
+                # returned -1683.3 on this model. Other washer models
+                # continue to request them as before.
+                status_codes = list(dict.fromkeys([
+                    *(code for code in status_codes if code not in (
+                        "0x05", "0x13", "0x34"
+                    )),
+                    *LX128B_DEVICE_INFO_CODES,
+                ]))
 
             try:
                 # Get device status (per-device tolerance)
