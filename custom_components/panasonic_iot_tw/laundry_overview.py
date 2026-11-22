@@ -295,8 +295,10 @@ def attach_laundry_overview(
                 or (
                     live_operation is None
                     and device.get("available") is True
+                    # A two-poll bridge may retain a previous ETA as
+                    # a bounded countdown, but must never re-timestamp
+                    # that value as a newly measured remaining time.
                     and (device.get("status") or {}).get("0x50") == "2"
-                    and device.get("status_is_cached") is not True
                 )
             )
         ):
