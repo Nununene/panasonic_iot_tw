@@ -85,7 +85,7 @@ class TestWashingMachineDevice:
         mock_coordinator.data[0]["status"]["0x50"] = "1"
         device = WashingMachineDevice(mock_coordinator, 0, mock_device_data)
         sensors = device.get_sensor_entities(mock_coordinator)
-        assert len(sensors) == 15  # LX128B: 10 supported + 5 raw Overview diagnostics
+        assert len(sensors) == 16  # LX128B: 11 supported + 5 raw Overview diagnostics
         state = next(
             sensor for sensor in sensors
             if sensor._attr_unique_id.endswith("_laundry_operation_state")
@@ -174,6 +174,7 @@ class TestWashingMachineDevice:
         assert "programme_expected_finish" in ids
         assert "laundry_operation_state" in ids
         assert "cycle_message" in ids
+        assert "nanoe_remaining_time" in ids
         assert "detergent_amount" in ids
         assert "softener_amount" in ids
         assert "error_code" in ids
@@ -209,6 +210,83 @@ class TestWashingMachineDevice:
         assert any(x.endswith("_detergent_low") for x in binary_ids)
         assert any(x.endswith("_softener_low") for x in binary_ids)
         assert any(x.endswith("_remote_control_allowed") for x in binary_ids)
+
+
+    def test_lx128b_official_0x55_programme_labels(
+        self, mock_coordinator, mock_device_data
+    ):
+        """The cloud CommandList 0x55 differs from legacy washer codes."""
+        from custom_components.panasonic_iot_tw.const import (
+            LX128B_AVAILABLE_CYCLES, WASHING_MACHINE_AVAILABLE_CYCLES,
+        )
+        assert len(LX128B_AVAILABLE_CYCLES) == 14
+        assert LX128B_AVAILABLE_CYCLES[18] == "warm_wash_standard"
+        assert WASHING_MACHINE_AVAILABLE_CYCLES[18] == "custom"
+
+        mock_device_data["model"] = "NA-LX128B"
+        mock_coordinator.data[0]["model"] = "NA-LX128B"
+        device = WashingMachineDevice(mock_coordinator, 0, mock_device_data)
+        sensor = next(
+            item for item in device.get_sensor_entities(mock_coordinator)
+            if item.unique_id.endswith("_cycle_message")
+        )
+        for code, expected in LX128B_AVAILABLE_CYCLES.items():
+            mock_coordinator.data[0]["status"]["0x55"] = str(code)
+            assert sensor.native_value == expected
+            assert expected in sensor.options
+        mock_coordinator.data[0]["status"]["0x55"] = "99"
+        assert sensor.native_value is None
+
+
+    def test_lx128b_nanoe_0x4f_direct_first_then_fresh_overview(
+        self, mock_coordinator, mock_device_data
+    ):
+        """Keep nanoe timing separate from the programme ETA."""
+        mock_device_data["model"] = "NA-LX128B"
+        washer = mock_coordinator.data[0]
+        washer["model"] = "NA-LX128B"
+        washer["available"] = True
+        now = datetime.now(timezone.utc).isoformat()
+        washer["status_observed_at"] = now
+        washer["status_is_cached"] = False
+        washer["status"]["0x4F"] = "14"
+        washer["overview_status"] = {"0x4F": 8}
+        washer["overview_observed_at"] = {"0x4F": now}
+        washer["overview_last_response_at"] = now
+        washer["overview_last_response_summary"] = {
+            "result": "matched", "commands": {"0x4F": "numeric"}
+        }
+        device = WashingMachineDevice(mock_coordinator, 0, mock_device_data)
+        nanoe = next(
+            item for item in device.get_sensor_entities(mock_coordinator)
+            if item.unique_id.endswith("_nanoe_remaining_time")
+        )
+        assert nanoe.device_class == SensorDeviceClass.DURATION
+        assert nanoe.native_value == 14
+        assert nanoe.available is True
+        assert nanoe.extra_state_attributes["source"] == "DeviceGetInfo"
+
+        # An invalid value from DeviceGetInfo does not block a valid
+        # current Overview response.
+        washer["status"]["0x4F"] = "-1683.3"
+        assert nanoe.native_value == 8
+        assert nanoe.extra_state_attributes["source"] == "UserGetDeviceStatus"
+
+        # A cached direct 14 must not override a current Overview 8.
+        washer["status"]["0x4F"] = "14"
+        washer["status_is_cached"] = True
+        assert nanoe.native_value == 8
+
+        # Both sources absent/invalid -> unavailable, never invent 0.
+        washer["overview_last_response_summary"]["commands"]["0x4F"] = (
+            "empty_string"
+        )
+        assert nanoe.available is False
+        assert nanoe.native_value is None
+
+        washer["status_is_cached"] = False
+        washer["status"]["0x4F"] = "0"
+        assert nanoe.native_value == 0
 
 
     def test_get_sensor_entities_types(self, washing_machine_device, mock_coordinator):
