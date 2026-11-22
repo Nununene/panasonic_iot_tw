@@ -444,6 +444,27 @@ DRYER_AVAILABLE_CYCLES = {
 # ============================================================================
 # Washing Machine Constants
 # ============================================================================
+# Model-specific command metadata (UserGetRegisteredGwList2 CommandList,
+# NA-LX128B / ModelType LX128B, timestamp 202204180700).
+# Do not use these codes for the other Type 3 Panasonic washer models:
+# their 0x55 programme values use a different mapping.
+LX128B_AVAILABLE_CYCLES = {
+    0: "standard",
+    2: "intensive",
+    5: "delicate",
+    8: "soak",
+    10: "quick_wash",
+    11: "tub_clean",
+    13: "large_items",
+    16: "quiet_night",
+    18: "warm_wash_standard",
+    19: "warm_wash_intensive",
+    20: "medium_temp_deodorize",
+    21: "high_temp_sanitize",
+    22: "warm_soak",
+    23: "warm_tub_clean",
+}
+
 WASHING_MACHINE_AVAILABLE_CYCLES = {
     0: "standard",
     8: "soak",
